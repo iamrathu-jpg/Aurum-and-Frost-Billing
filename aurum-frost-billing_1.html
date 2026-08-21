@@ -8,6 +8,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -499,6 +500,7 @@ const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const money = n => '₹' + (Math.round(n*100)/100).toLocaleString('en-IN');
+const moneyPdf = n => 'Rs. ' + (Math.round(n*100)/100).toLocaleString('en-IN');
 
 function toast(msg){
   const t = $('#toast');
@@ -1113,6 +1115,8 @@ function saleCost(s){
   return s.items.reduce((a,it)=>a + (it.cost!=null ? it.cost : computeProductCost(products.find(p=>p.id===it.productId)||{recipe:[]}))*it.qty, 0);
 }
 
+let reportDate = new Date().toISOString().slice(0,10); // yyyy-mm-dd, local input value
+
 function renderReports(main){
   const todayStr = new Date().toDateString();
   const todaySales = sales.filter(s=>new Date(s.ts).toDateString()===todayStr);
@@ -1138,9 +1142,30 @@ function renderReports(main){
       <div class="stat"><div class="n">${money(totalStockValue)}</div><div class="l">Finished Stock Value</div></div>
       <div class="stat"><div class="n">${ingredients.length}</div><div class="l">Ingredients Tracked</div></div>
     </div>
-    <h2 class="section-title" style="margin-top:6px;">Recent sales</h2>
+
+    <div class="card" style="margin-top:4px;">
+      <label style="margin-top:0;">Report Date</label>
+      <input id="reportDateInput" type="date" value="${reportDate}" max="${new Date().toISOString().slice(0,10)}">
+      <button class="btn btn-primary btn-block" id="sendReportBtn" style="margin-top:12px;">Send Report as PDF</button>
+    </div>
+
+    <div class="card">
+      <div class="item-name">Backup &amp; Restore</div>
+      <p class="item-meta" style="margin-top:4px;margin-bottom:12px;line-height:1.5;">Your data lives only on this phone. Back it up before switching devices, or restore it on a new one.</p>
+      <button class="btn btn-outline btn-block" id="backupBtn">Backup Data</button>
+      <button class="btn btn-ghost btn-block" id="restoreBtn" style="margin-top:8px;">Restore from Backup</button>
+      <input type="file" id="restoreFileInput" accept="application/json" style="display:none;">
+    </div>
+
+    <h2 class="section-title" style="margin-top:20px;">Recent sales</h2>
     <div id="salesList" style="margin-top:10px;"></div>
   `;
+  $('#reportDateInput').addEventListener('change', e=>{ reportDate = e.target.value; });
+  $('#sendReportBtn').addEventListener('click', ()=>sendReport(reportDate));
+  $('#backupBtn').addEventListener('click', backupData);
+  $('#restoreBtn').addEventListener('click', ()=> $('#restoreFileInput').click());
+  $('#restoreFileInput').addEventListener('change', restoreData);
+
   const list = $('#salesList');
   if(sales.length===0){
     list.innerHTML = `<div class="empty"><p>No sales logged yet.</p></div>`;
@@ -1162,6 +1187,231 @@ function renderReports(main){
     `;
     list.appendChild(el);
   });
+}
+
+// ---------- PDF Report ----------
+async function sendReport(dateStr){
+  const btn = $('#sendReportBtn');
+  const originalText = btn.textContent;
+  btn.textContent = 'Preparing report…';
+  btn.disabled = true;
+  try{
+    if(typeof window.jspdf === 'undefined'){
+      toast('PDF library still loading — try again in a moment');
+      return;
+    }
+    const dayStart = new Date(dateStr + 'T00:00:00');
+    const dayEnd = new Date(dateStr + 'T23:59:59');
+    const daySales = sales.filter(s => s.ts >= dayStart.getTime() && s.ts <= dayEnd.getTime());
+
+    const revenue = daySales.reduce((a,s)=>a+s.total,0);
+    const cost = daySales.reduce((a,s)=>a+saleCost(s),0);
+    const profit = revenue - cost;
+
+    // aggregate items sold across the day
+    const itemMap = {};
+    daySales.forEach(s=>{
+      s.items.forEach(it=>{
+        if(!itemMap[it.name]) itemMap[it.name] = {qty:0, revenue:0};
+        itemMap[it.name].qty += it.qty;
+        itemMap[it.name].revenue += it.qty*it.price;
+      });
+    });
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'pt', format:'a4'});
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 48;
+    let y = 60;
+
+    const red = [122,35,35];
+    const ink = [42,23,20];
+    const muted = [130,90,80];
+
+    doc.setFont('times','italic'); doc.setFontSize(22); doc.setTextColor(...red);
+    doc.text('Aurum & Frost', margin, y);
+    y += 20;
+    doc.setFont('courier','normal'); doc.setFontSize(9); doc.setTextColor(...muted);
+    doc.text('DAILY SALES REPORT', margin, y);
+    doc.text(new Date(dateStr).toLocaleDateString('en-IN',{weekday:'long', day:'2-digit', month:'long', year:'numeric'}), pageW-margin, y, {align:'right'});
+    y += 24;
+    doc.setDrawColor(200,170,130);
+    doc.line(margin, y, pageW-margin, y);
+    y += 30;
+
+    // stat boxes
+    const stats = [
+      ['Revenue', moneyPdf(revenue)],
+      ['Ingredient Cost', moneyPdf(cost)],
+      ['Profit', moneyPdf(profit)],
+      ['Bills', String(daySales.length)],
+    ];
+    const boxW = (pageW - margin*2 - 30) / 4;
+    stats.forEach((s,i)=>{
+      const x = margin + i*(boxW+10);
+      doc.setDrawColor(230,210,180);
+      doc.setFillColor(251,244,231);
+      doc.roundedRect(x, y, boxW, 54, 4, 4, 'FD');
+      doc.setFont('times','bold'); doc.setFontSize(14); doc.setTextColor(...red);
+      doc.text(s[1], x+10, y+24);
+      doc.setFont('courier','normal'); doc.setFontSize(7.5); doc.setTextColor(...muted);
+      doc.text(s[0].toUpperCase(), x+10, y+40);
+    });
+    y += 84;
+
+    doc.setFont('times','bold'); doc.setFontSize(13); doc.setTextColor(...ink);
+    doc.text('Items Sold', margin, y);
+    y += 18;
+
+    const names = Object.keys(itemMap);
+    if(names.length===0){
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...muted);
+      doc.text('No sales recorded for this date.', margin, y);
+      y += 20;
+    } else {
+      doc.setFont('courier','normal'); doc.setFontSize(8); doc.setTextColor(...muted);
+      doc.text('ITEM', margin, y);
+      doc.text('QTY', pageW-margin-160, y, {align:'right'});
+      doc.text('REVENUE', pageW-margin, y, {align:'right'});
+      y += 8;
+      doc.setDrawColor(230,210,180);
+      doc.line(margin, y, pageW-margin, y);
+      y += 16;
+      names.forEach(name=>{
+        const row = itemMap[name];
+        doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...ink);
+        doc.text(name, margin, y);
+        doc.text(String(row.qty), pageW-margin-160, y, {align:'right'});
+        doc.text(moneyPdf(row.revenue), pageW-margin, y, {align:'right'});
+        y += 20;
+      });
+      y += 6;
+      doc.setDrawColor(...red);
+      doc.line(margin, y, pageW-margin, y);
+      y += 20;
+      doc.setFont('times','bold'); doc.setFontSize(12); doc.setTextColor(...red);
+      doc.text('Total Revenue', margin, y);
+      doc.text(moneyPdf(revenue), pageW-margin, y, {align:'right'});
+      y += 40;
+    }
+
+    doc.setFont('courier','normal'); doc.setFontSize(8); doc.setTextColor(...muted);
+    doc.text('Aurum & Frost — Artisanal Ice Creams · Generated ' + new Date().toLocaleString('en-IN'), margin, 800);
+
+    const fileName = `Aurum-Frost-Report-${dateStr}.pdf`;
+    const blob = doc.output('blob');
+    const file = new File([blob], fileName, {type:'application/pdf'});
+
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{
+        await navigator.share({
+          files:[file],
+          title:`Aurum & Frost Report — ${dateStr}`,
+          text:`Sales report for ${dateStr}`
+        });
+        toast('Report ready to send');
+      }catch(e){
+        if(e.name !== 'AbortError') downloadPdfFallback(blob, fileName);
+      }
+    } else {
+      downloadPdfFallback(blob, fileName);
+    }
+  }catch(e){
+    console.error(e);
+    toast('Could not generate report');
+  }finally{
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+function downloadPdfFallback(blob, fileName){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  toast('PDF downloaded — attach it to WhatsApp manually');
+}
+
+// ---------- Backup & Restore ----------
+async function backupData(){
+  const btn = $('#backupBtn');
+  const original = btn.textContent;
+  btn.textContent = 'Preparing backup…';
+  btn.disabled = true;
+  try{
+    const payload = {
+      app: 'aurum-frost-billing',
+      exportedAt: new Date().toISOString(),
+      ingredients, products, sales
+    };
+    const dateStr = new Date().toISOString().slice(0,10);
+    const fileName = `Aurum-Frost-Backup-${dateStr}.json`;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const file = new File([blob], fileName, {type:'application/json'});
+
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      try{
+        await navigator.share({files:[file], title:'Aurum & Frost Backup', text:`Data backup — ${dateStr}`});
+        toast('Backup ready to send');
+      }catch(e){
+        if(e.name !== 'AbortError') downloadJsonFallback(blob, fileName);
+      }
+    } else {
+      downloadJsonFallback(blob, fileName);
+    }
+  }catch(e){
+    console.error(e);
+    toast('Could not create backup');
+  }finally{
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+}
+
+function downloadJsonFallback(blob, fileName){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  toast('Backup downloaded — save it somewhere safe');
+}
+
+function restoreData(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    let data;
+    try{
+      data = JSON.parse(ev.target.result);
+    }catch(err){
+      toast('That file doesn\'t look like a valid backup');
+      e.target.value = '';
+      return;
+    }
+    if(!data || !Array.isArray(data.ingredients) || !Array.isArray(data.products) || !Array.isArray(data.sales)){
+      toast('That file doesn\'t look like a valid backup');
+      e.target.value = '';
+      return;
+    }
+    const dateNote = data.exportedAt ? new Date(data.exportedAt).toLocaleString('en-IN') : 'unknown date';
+    const confirmMsg = `Restore backup from ${dateNote}?\n\nThis will REPLACE everything currently on this phone:\n- ${data.ingredients.length} ingredients\n- ${data.products.length} products\n- ${data.sales.length} sales records\n\nThis can't be undone.`;
+    if(!confirm(confirmMsg)){
+      e.target.value = '';
+      return;
+    }
+    ingredients = data.ingredients;
+    products = data.products;
+    sales = data.sales;
+    await Promise.all([saveIngredients(), saveProducts(), saveSales()]);
+    e.target.value = '';
+    render();
+    toast('Backup restored');
+  };
+  reader.readAsText(file);
 }
 
 // ---------- Sheet helpers ----------
