@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#7A2323">
+<title>Aurum & Frost — Billing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FFEFDD;
+    --paper:#FFF8EE;
+    --ink:#2A1714;
+    --red:#B93435;
+    --red-deep:#7A2323;
+    --line:#E8D3B0;
+    --line-soft:#F0E2C8;
+    --muted:#9C4A42;
+    --good:#3F7A4E;
+    --good-bg:#E7F0E4;
+    --warn:#B5581F;
+    --warn-bg:#FBEADA;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    background:var(--cream);
+    color:var(--ink);
+    font-family:'Space Grotesk',sans-serif;
+    display:flex;
+    flex-direction:column;
+    min-height:100vh;
+    max-width:520px;
+    margin:0 auto;
+    position:relative;
+  }
+  ::selection{background:var(--red);color:var(--cream);}
+
+  /* Header */
+  header{
+    background:var(--red-deep);
+    color:var(--cream);
+    padding:16px 18px 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    position:sticky;
+    top:0;
+    z-index:20;
+  }
+  header .brand{
+    font-family:'Fraunces',serif;
+    font-style:italic;
+    font-weight:600;
+    font-size:19px;
+  }
+  header .tab-title{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    opacity:.75;
+    margin-top:2px;
+  }
+  header .today{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    text-align:right;
+    opacity:.85;
+    line-height:1.5;
+  }
+  header .today b{font-size:14px;display:block;}
+
+  main{
+    flex:1;
+    overflow-y:auto;
+    padding:16px 16px 90px;
+  }
+  .view{display:none;}
+  .view.active{display:block;animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  h2.section-title{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:18px;
+    color:var(--red-deep);
+    margin-bottom:2px;
+  }
+  p.section-sub{
+    font-size:11.5px;
+    color:var(--muted);
+    margin-bottom:16px;
+    line-height:1.5;
+  }
+
+  /* Cards */
+  .card{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px;
+    margin-bottom:10px;
+  }
+  .card-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .item-name{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:15px;
+    color:var(--ink);
+  }
+  .item-meta{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;
+    color:var(--muted);
+    margin-top:3px;
+  }
+  .stock-pill{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    padding:3px 9px;
+    border-radius:20px;
+    white-space:nowrap;
+    font-weight:600;
+  }
+  .stock-ok{background:var(--good-bg);color:var(--good);}
+  .stock-low{background:var(--warn-bg);color:var(--warn);}
+  .stock-out{background:#F5DEDA;color:var(--red-deep);}
+
+  /* Buttons */
+  .btn{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    border:none;
+    border-radius:8px;
+    padding:11px 16px;
+    cursor:pointer;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+  }
+  .btn-primary{background:var(--red);color:var(--cream);}
+  .btn-primary:active{background:var(--red-deep);}
+  .btn-outline{background:transparent;border:1px solid var(--red);color:var(--red-deep);}
+  .btn-ghost{background:var(--line-soft);color:var(--ink);}
+  .btn-block{width:100%;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-sm{padding:7px 12px;font-size:11.5px;border-radius:7px;}
+
+  .fab{
+    position:fixed;
+    right:calc(50% - 260px + 18px);
+    bottom:96px;
+    width:52px;height:52px;
+    border-radius:50%;
+    background:var(--red);
+    color:var(--cream);
+    font-size:26px;
+    border:none;
+    box-shadow:0 8px 18px rgba(122,35,35,.35);
+    z-index:15;
+    display:flex;align-items:center;justify-content:center;
+  }
+  @media (max-width:519px){
+    .fab{right:18px;}
+  }
+
+  /* Stepper */
+  .stepper{
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .stepper button{
+    width:40px;height:40px;
+    border-radius:50%;
+    border:1px solid var(--red);
+    background:var(--paper);
+    color:var(--red-deep);
+    font-size:18px;
+    font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .stepper span{
+    font-family:'JetBrains Mono',monospace;
+    font-weight:600;
+    min-width:20px;
+    text-align:center;
+  }
+
+  /* Bill tab */
+  .product-grid{display:flex;flex-direction:column;gap:8px;}
+  .product-card{
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .product-card .price{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+    color:var(--red);
+    margin-top:2px;
+  }
+  .add-btn{
+    width:44px;height:44px;
+    border-radius:50%;
+    border:none;
+    background:var(--red);
+    color:var(--cream);
+    font-size:22px;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  .cart-bar{
+    position:fixed;
+    bottom:64px;
+    left:0;right:0;
+    max-width:520px;
+    margin:0 auto;
+    background:var(--red-deep);
+    color:var(--cream);
+    padding:12px 16px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    z-index:18;
+    border-radius:12px 12px 0 0;
+  }
+  .cart-bar.hidden{display:none;}
+  .cart-bar .cnt{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    opacity:.8;
+  }
+  .cart-bar .amt{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:17px;
+  }
+
+  /* Bottom nav */
+  nav.tabbar{
+    position:fixed;
+    bottom:0;left:0;right:0;
+    max-width:520px;
+    margin:0 auto;
+    background:var(--paper);
+    border-top:1px solid var(--line);
+    display:flex;
+    z-index:20;
+  }
+  nav.tabbar button{
+    flex:1;
+    background:none;
+    border:none;
+    padding:10px 4px 8px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:3px;
+    color:var(--muted);
+  }
+  nav.tabbar button.active{color:var(--red-deep);}
+  nav.tabbar svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;}
+  nav.tabbar .tlabel{
+    font-family:'JetBrains Mono',monospace;
+    font-size:8.5px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+
+  /* Forms / modal */
+  .sheet-backdrop{
+    position:fixed;inset:0;
+    background:rgba(42,23,20,.45);
+    z-index:30;
+    display:none;
+    align-items:flex-end;
+    justify-content:center;
+  }
+  .sheet-backdrop.open{display:flex;}
+  .sheet{
+    background:var(--paper);
+    width:100%;
+    max-width:520px;
+    border-radius:16px 16px 0 0;
+    padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+    max-height:86vh;
+    overflow-y:auto;
+  }
+  .sheet h3{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:17px;
+    color:var(--red-deep);
+    margin-bottom:14px;
+  }
+  label{
+    display:block;
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin-bottom:5px;
+    margin-top:12px;
+  }
+  label:first-of-type{margin-top:0;}
+  input, select{
+    width:100%;
+    padding:11px 12px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--cream);
+    color:var(--ink);
+    font-family:'Space Grotesk',sans-serif;
+    font-size:16px;
+  }
+  input:focus, select:focus{outline:2px solid var(--red);outline-offset:1px;}
+  .form-row{display:flex;gap:10px;}
+  .form-row > div{flex:1;}
+  .sheet-actions{
+    display:flex;
+    gap:10px;
+    margin-top:18px;
+  }
+
+  .recipe-line{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:8px;
+    background:var(--cream);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:8px 10px;
+  }
+  .recipe-line select{flex:1.4;}
+  .recipe-line input{flex:.8;}
+  .recipe-line button{
+    background:none;border:none;color:var(--red);font-size:16px;font-weight:700;
+    width:24px;
+  }
+
+  .empty{
+    text-align:center;
+    padding:40px 20px;
+    color:var(--muted);
+  }
+  .empty .big{
+    font-family:'Fraunces',serif;
+    font-style:italic;
+    font-size:16px;
+    color:var(--red-deep);
+    margin-bottom:6px;
+  }
+  .empty p{font-size:12px;line-height:1.6;}
+
+  .toast{
+    position:fixed;
+    top:70px;left:50%;
+    transform:translateX(-50%);
+    background:var(--ink);
+    color:var(--cream);
+    padding:10px 18px;
+    border-radius:20px;
+    font-size:12.5px;
+    z-index:50;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .2s;
+    white-space:nowrap;
+  }
+  .toast.show{opacity:1;}
+
+  /* Receipt */
+  .receipt{
+    background:var(--paper);
+    border:1px dashed var(--line);
+    border-radius:10px;
+    padding:18px;
+  }
+  .receipt-head{text-align:center;margin-bottom:14px;}
+  .receipt-head .rb{
+    font-family:'Fraunces',serif;font-style:italic;font-weight:600;font-size:18px;color:var(--red-deep);
+  }
+  .receipt-head .rt{
+    font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:2px;
+  }
+  .receipt-line{
+    display:flex;justify-content:space-between;
+    font-size:12.5px;
+    padding:6px 0;
+    border-bottom:1px dashed var(--line-soft);
+  }
+  .receipt-total{
+    display:flex;justify-content:space-between;
+    font-family:'Fraunces',serif;font-weight:600;font-size:16px;
+    color:var(--red-deep);
+    padding-top:10px;margin-top:6px;
+    border-top:1px solid var(--line);
+  }
+  .receipt-meta{
+    font-family:'JetBrains Mono',monospace;
+    font-size:9.5px;color:var(--muted);text-align:center;margin-top:14px;
+  }
+
+  .stat-grid{display:flex;gap:10px;margin-bottom:16px;}
+  .stat{
+    flex:1;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px 14px;
+  }
+  .stat .n{font-family:'Fraunces',serif;font-weight:600;font-size:20px;color:var(--red-deep);}
+  .stat .l{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:2px;}
+
+  .loading{text-align:center;padding:60px 20px;color:var(--muted);font-size:12px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand">Aurum &amp; Frost</div>
+    <div class="tab-title" id="tabTitle">Billing</div>
+  </div>
+  <div class="today">
+    <span id="todayDate"></span>
+    <b id="todayTotal">₹0</b>
+  </div>
+</header>
+
+<main id="main">
+  <div class="loading" id="loadingMsg">Loading your data…</div>
+</main>
+
+<div class="cart-bar hidden" id="cartBar">
+  <div>
+    <div class="cnt" id="cartCount">0 items</div>
+    <div class="amt" id="cartAmt">₹0</div>
+  </div>
+  <button class="btn btn-primary" id="reviewBillBtn">Review Bill</button>
+</div>
+
+<nav class="tabbar">
+  <button data-tab="bill" class="active">
+    <svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 12h6M9 16h6M9 8h2"/></svg>
+    <span class="tlabel">Bill</span>
+  </button>
+  <button data-tab="stock">
+    <svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.5 8.5l8.5 4.5 8.5-4.5M12 13v8"/></svg>
+    <span class="tlabel">Stock</span>
+  </button>
+  <button data-tab="recipes">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+    <span class="tlabel">Recipes</span>
+  </button>
+  <button data-tab="reports">
+    <svg viewBox="0 0 24 24"><path d="M4 19V10M11 19V4M18 19v-7"/></svg>
+    <span class="tlabel">Reports</span>
+  </button>
+</nav>
+
+<button class="fab" id="fabBtn">+</button>
+
+<div class="sheet-backdrop" id="sheetBackdrop">
+  <div class="sheet" id="sheetContent"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- State ----------
+let ingredients = [];
+let products = [];
+let sales = [];
+let currentTab = 'bill';
+let cart = {}; // productId -> qty
+
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const money = n => '₹' + (Math.round(n*100)/100).toLocaleString('en-IN');
+
+function toast(msg){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._h);
+  toast._h = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+// ---------- Storage ----------
+async function loadAll(){
+  try{
+    const [i,p,s] = await Promise.all([
+      safeGet('af-ingredients'),
+      safeGet('af-products'),
+      safeGet('af-sales'),
+    ]);
+    ingredients = i || [];
+    products = p || [];
+    sales = s || [];
+  }catch(e){
+    console.error('Load error', e);
+    toast('Could not load saved data — starting fresh');
+  }
+}
+async function safeGet(key){
+  try{
+    const r = await window.storage.get(key, false);
+    return r ? JSON.parse(r.value) : null;
+  }catch(e){
+    return null;
+  }
+}
+async function save(key, val){
+  try{
+    const r = await window.storage.set(key, JSON.stringify(val), false);
+    if(!r) toast('Save failed — try again');
+    return !!r;
+  }catch(e){
+    console.error(e);
+    toast('Save failed — try again');
+    return false;
+  }
+}
+const saveIngredients = () => save('af-ingredients', ingredients);
+const saveProducts = () => save('af-products', products);
+const saveSales = () => save('af-sales', sales);
+
+// ---------- Header ----------
+function updateHeader(){
+  $('#todayDate').textContent = new Date().toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+  const todayStr = new Date().toDateString();
+  const todayTotal = sales.filter(s => new Date(s.ts).toDateString() === todayStr)
+                           .reduce((a,s)=>a+s.total,0);
+  $('#todayTotal').textContent = money(todayTotal);
+  const titles = {bill:'Billing', stock:'Ingredient Stock', recipes:'Products & Recipes', reports:'Reports'};
+  $('#tabTitle').textContent = titles[currentTab];
+}
+
+// ---------- Tabs ----------
+$$('.tabbar button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    currentTab = btn.dataset.tab;
+    $$('.tabbar button').forEach(b=>b.classList.toggle('active', b===btn));
+    render();
+  });
+});
+
+$('#fabBtn').addEventListener('click', ()=>{
+  if(currentTab==='stock') openIngredientForm();
+  else if(currentTab==='recipes') openProductForm();
+  else if(currentTab==='bill') openIngredientForm(); // fallback, hidden anyway
+});
+
+function updateFab(){
+  const fab = $('#fabBtn');
+  fab.style.display = (currentTab==='stock' || currentTab==='recipes') ? 'flex' : 'none';
+}
+
+// ---------- Render dispatch ----------
+function render(){
+  updateHeader();
+  updateFab();
+  const main = $('#main');
+  if(currentTab==='bill') renderBill(main);
+  else if(currentTab==='stock') renderStock(main);
+  else if(currentTab==='recipes') renderRecipes(main);
+  else if(currentTab==='reports') renderReports(main);
+  renderCartBar();
+}
+
+// ================= BILL TAB =================
+function renderBill(main){
+  if(products.length===0){
+    main.innerHTML = `<div class="empty">
+      <div class="big">No products yet</div>
+      <p>Add a product with its recipe in the Recipes tab, produce some stock, then come back here to start billing.</p>
+    </div>`;
+    return;
+  }
+  main.innerHTML = `
+    <h2 class="section-title">Take an order</h2>
+    <p class="section-sub">Tap + to add items. Only items with stock in hand can be sold.</p>
+    <div class="product-grid" id="productGrid"></div>
+  `;
+  const grid = $('#productGrid');
+  products.forEach(p=>{
+    const qtyInCart = cart[p.id] || 0;
+    const out = p.stock <= 0;
+    const el = document.createElement('div');
+    el.className = 'product-card';
+    el.innerHTML = `
+      <div>
+        <div class="item-name">${esc(p.name)}</div>
+        <div class="price">${money(p.price)} · ${out ? '<span style="color:var(--red-deep)">out of stock</span>' : p.stock + ' in stock'}</div>
+      </div>
+      ${qtyInCart>0 ? `
+        <div class="stepper">
+          <button data-act="dec" data-id="${p.id}">−</button>
+          <span>${qtyInCart}</span>
+          <button data-act="inc" data-id="${p.id}" ${qtyInCart>=p.stock?'disabled':''}>+</button>
+        </div>
+      ` : `<button class="add-btn" data-act="inc" data-id="${p.id}" ${out?'disabled style="opacity:.35"':''}>+</button>`}
+    `;
+    grid.appendChild(el);
+  });
+  grid.addEventListener('click', e=>{
+    const btn = e.target.closest('button[data-act]');
+    if(!btn) return;
+    const id = btn.dataset.id;
+    const prod = products.find(p=>p.id===id);
+    if(!prod) return;
+    const cur = cart[id]||0;
+    if(btn.dataset.act==='inc'){
+      if(cur >= prod.stock){ toast(`Only ${prod.stock} in stock`); return; }
+      cart[id] = cur+1;
+    } else {
+      cart[id] = Math.max(0, cur-1);
+      if(cart[id]===0) delete cart[id];
+    }
+    renderBill(main);
+    renderCartBar();
+  });
+}
+
+function renderCartBar(){
+  const bar = $('#cartBar');
+  const ids = Object.keys(cart);
+  if(currentTab!=='bill' || ids.length===0){ bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  let count=0, total=0;
+  ids.forEach(id=>{
+    const p = products.find(x=>x.id===id);
+    if(!p) return;
+    count += cart[id];
+    total += cart[id]*p.price;
+  });
+  $('#cartCount').textContent = `${count} item${count!==1?'s':''}`;
+  $('#cartAmt').textContent = money(total);
+}
+
+$('#reviewBillBtn').addEventListener('click', openBillReview);
+
+function openBillReview(){
+  const ids = Object.keys(cart);
+  if(ids.length===0) return;
+  let total = 0;
+  const lines = ids.map(id=>{
+    const p = products.find(x=>x.id===id);
+    const qty = cart[id];
+    const lineTotal = qty*p.price;
+    total += lineTotal;
+    return `<div class="receipt-line"><span>${esc(p.name)} × ${qty}</span><span>${money(lineTotal)}</span></div>`;
+  }).join('');
+  openSheet(`
+    <h3>Review Bill</h3>
+    <div class="receipt">
+      <div class="receipt-head">
+        <div class="rb">Aurum &amp; Frost</div>
+        <div class="rt">Order Summary</div>
+      </div>
+      ${lines}
+      <div class="receipt-total"><span>Total</span><span>${money(total)}</span></div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost btn-block" id="cancelBillBtn">Back</button>
+      <button class="btn btn-primary btn-block" id="confirmBillBtn">Complete Sale</button>
+    </div>
+  `);
+  $('#cancelBillBtn').addEventListener('click', closeSheet);
+  $('#confirmBillBtn').addEventListener('click', async ()=>{
+    // validate stock again
+    for(const id of ids){
+      const p = products.find(x=>x.id===id);
+      if(cart[id] > p.stock){ toast(`${p.name} only has ${p.stock} left`); return; }
+    }
+    const items = ids.map(id=>{
+      const p = products.find(x=>x.id===id);
+      return {productId:id, name:p.name, qty:cart[id], price:p.price, cost:computeProductCost(p)};
+    });
+    ids.forEach(id=>{
+      const p = products.find(x=>x.id===id);
+      p.stock -= cart[id];
+    });
+    const sale = {id:uid(), ts:Date.now(), items, total};
+    sales.unshift(sale);
+    await Promise.all([saveProducts(), saveSales()]);
+    cart = {};
+    closeSheet();
+    showReceipt(sale);
+    render();
+  });
+}
+
+function showReceipt(sale){
+  const lines = sale.items.map(it=>
+    `<div class="receipt-line"><span>${esc(it.name)} × ${it.qty}</span><span>${money(it.qty*it.price)}</span></div>`
+  ).join('');
+  openSheet(`
+    <h3>Sale Complete</h3>
+    <div class="receipt" id="receiptPrintArea">
+      <div class="receipt-head">
+        <div class="rb">Aurum &amp; Frost</div>
+        <div class="rt">Bliss · Creamy · Delight</div>
+      </div>
+      ${lines}
+      <div class="receipt-total"><span>Total</span><span>${money(sale.total)}</span></div>
+      <div class="receipt-meta">${new Date(sale.ts).toLocaleString('en-IN')}</div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn btn-outline btn-block" id="shareBillBtn">Share</button>
+      <button class="btn btn-primary btn-block" id="doneBillBtn">Done</button>
+    </div>
+  `);
+  $('#doneBillBtn').addEventListener('click', closeSheet);
+  $('#shareBillBtn').addEventListener('click', async ()=>{
+    const text = `Aurum & Frost\n${sale.items.map(it=>`${it.name} x${it.qty} - ${money(it.qty*it.price)}`).join('\n')}\nTotal: ${money(sale.total)}\n${new Date(sale.ts).toLocaleString('en-IN')}`;
+    if(navigator.share){
+      try{ await navigator.share({text}); }catch(e){}
+    } else {
+      try{
+        await navigator.clipboard.writeText(text);
+        toast('Bill copied — paste to share');
+      }catch(e){
+        toast('Could not share automatically');
+      }
+    }
+  });
+}
+
+// ================= STOCK TAB (ingredients) =================
+function renderStock(main){
+  if(ingredients.length===0){
+    main.innerHTML = `<div class="empty">
+      <div class="big">No ingredients yet</div>
+      <p>Tap + to add your first ingredient — milk, cream, sugar, whatever you stock and measure.</p>
+    </div>`;
+    return;
+  }
+  main.innerHTML = `
+    <h2 class="section-title">Ingredients on hand</h2>
+    <p class="section-sub">This is your raw material stock — what production draws down from.</p>
+    <div id="ingList"></div>
+  `;
+  const list = $('#ingList');
+  ingredients.forEach(ing=>{
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = `
+      <div class="card-row">
+        <div>
+          <div class="item-name">${esc(ing.name)}</div>
+          <div class="item-meta">${ing.stock} ${esc(ing.unit)} in stock ${ing.rate?`· ${money(ing.rate)}/${esc(ing.unit)}`:'· no cost set'}</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-ghost" data-act="add" data-id="${ing.id}">+ Stock</button>
+          <button class="btn btn-sm btn-outline" data-act="edit" data-id="${ing.id}">Edit</button>
+        </div>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+  list.addEventListener('click', e=>{
+    const btn = e.target.closest('button[data-act]');
+    if(!btn) return;
+    const ing = ingredients.find(i=>i.id===btn.dataset.id);
+    if(btn.dataset.act==='add') openAddStock(ing);
+    else openIngredientForm(ing);
+  });
+}
+
+function openIngredientForm(existing){
+  openSheet(`
+    <h3>${existing?'Edit Ingredient':'Add Ingredient'}</h3>
+    <label>Name</label>
+    <input id="fName" value="${existing?esc(existing.name):''}" placeholder="e.g. Fresh Cream">
+    <div class="form-row">
+      <div>
+        <label>Unit</label>
+        <select id="fUnit">
+          ${['ml','L','g','kg','pcs'].map(u=>`<option value="${u}" ${existing&&existing.unit===u?'selected':''}>${u}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label>Starting Stock</label>
+        <input id="fStock" type="number" min="0" step="any" value="${existing?existing.stock:0}">
+      </div>
+    </div>
+    <label>Cost per Unit (₹)</label>
+    <input id="fRate" type="number" min="0" step="any" value="${existing?(existing.rate||0):0}" placeholder="e.g. 60 per L">
+    <p class="section-sub" style="margin-top:4px;">What you pay per ${existing?esc(existing.unit):'unit'} — used to work out product cost.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost btn-block" id="cancelIngBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="saveIngBtn">${existing?'Save':'Add'}</button>
+    </div>
+    ${existing?'<button class="btn btn-outline btn-block" style="margin-top:10px;color:var(--red)" id="delIngBtn">Delete Ingredient</button>':''}
+  `);
+  $('#cancelIngBtn').addEventListener('click', closeSheet);
+  $('#saveIngBtn').addEventListener('click', async ()=>{
+    const name = $('#fName').value.trim();
+    const unit = $('#fUnit').value;
+    const stock = parseFloat($('#fStock').value)||0;
+    const rate = parseFloat($('#fRate').value)||0;
+    if(!name){ toast('Enter a name'); return; }
+    if(existing){
+      existing.name=name; existing.unit=unit; existing.stock=stock; existing.rate=rate;
+    } else {
+      ingredients.push({id:uid(), name, unit, stock, rate});
+    }
+    await saveIngredients();
+    closeSheet(); render();
+    toast(existing?'Ingredient updated':'Ingredient added');
+  });
+  if(existing){
+    $('#delIngBtn').addEventListener('click', async ()=>{
+      if(!confirm(`Remove ${existing.name}? This won't undo recipes that reference it.`)) return;
+      ingredients = ingredients.filter(i=>i.id!==existing.id);
+      await saveIngredients();
+      closeSheet(); render();
+    });
+  }
+}
+
+function openAddStock(ing){
+  openSheet(`
+    <h3>Add Stock — ${esc(ing.name)}</h3>
+    <label>Quantity to add (${esc(ing.unit)})</label>
+    <input id="fAdd" type="number" min="0" step="any" placeholder="0">
+    <p class="section-sub" style="margin-top:8px;">Current: ${ing.stock} ${esc(ing.unit)} · Cost: ${ing.rate?money(ing.rate)+'/'+esc(ing.unit):'not set'}</p>
+    <label>Cost per ${esc(ing.unit)} this purchase (₹) — optional</label>
+    <input id="fPurchaseRate" type="number" min="0" step="any" placeholder="Leave blank to keep ${ing.rate||0}">
+    <p class="section-sub" style="margin-top:4px;">If the price changed this time, enter it here — it'll update the cost used for all future product costing.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost btn-block" id="cancelAddBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="confirmAddBtn">Add Stock</button>
+    </div>
+  `);
+  $('#cancelAddBtn').addEventListener('click', closeSheet);
+  $('#confirmAddBtn').addEventListener('click', async ()=>{
+    const qty = parseFloat($('#fAdd').value);
+    if(!qty || qty<=0){ toast('Enter a valid quantity'); return; }
+    const newRate = parseFloat($('#fPurchaseRate').value);
+    ing.stock += qty;
+    if(newRate && newRate>0) ing.rate = newRate;
+    await saveIngredients();
+    closeSheet(); render();
+    toast(`Added ${qty} ${ing.unit} of ${ing.name}`);
+  });
+}
+
+// ================= RECIPES TAB (products) =================
+function renderRecipes(main){
+  if(products.length===0 && ingredients.length===0){
+    main.innerHTML = `<div class="empty">
+      <div class="big">Start with ingredients</div>
+      <p>Add your ingredients in the Stock tab first, then come back here to build products from them.</p>
+    </div>`;
+    return;
+  }
+  if(products.length===0){
+    main.innerHTML = `<div class="empty">
+      <div class="big">No products yet</div>
+      <p>Tap + to create your first product — e.g. "Vanilla Tub 500ml" — and define what it's made from.</p>
+    </div>`;
+    return;
+  }
+  main.innerHTML = `
+    <h2 class="section-title">Products &amp; recipes</h2>
+    <p class="section-sub">Each product draws from your ingredient stock when you log production.</p>
+    <div id="prodList"></div>
+  `;
+  const list = $('#prodList');
+  products.forEach(p=>{
+    const el = document.createElement('div');
+    el.className = 'card';
+    const recipeText = (p.recipe||[]).map(r=>{
+      const ing = ingredients.find(i=>i.id===r.ingredientId);
+      return ing ? `${r.qty}${ing.unit} ${ing.name}` : null;
+    }).filter(Boolean).join(', ');
+    const cost = computeProductCost(p);
+    const margin = p.price - cost;
+    const marginPct = p.price>0 ? Math.round((margin/p.price)*100) : 0;
+    const marginColor = margin<0 ? 'var(--red-deep)' : 'var(--good)';
+    el.innerHTML = `
+      <div class="card-row">
+        <div>
+          <div class="item-name">${esc(p.name)}</div>
+          <div class="item-meta">${money(p.price)} · ${p.stock} in stock</div>
+          ${recipeText ? `<div class="item-meta" style="margin-top:4px;opacity:.85">Uses: ${esc(recipeText)}</div>` : ''}
+          <div class="item-meta" style="margin-top:4px;color:${marginColor}">Cost ${money(cost)} · Margin ${money(margin)} (${marginPct}%)</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-sm btn-primary" data-act="produce" data-id="${p.id}">Produce Batch</button>
+        <button class="btn btn-sm btn-outline" data-act="edit" data-id="${p.id}">Edit</button>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+  list.addEventListener('click', e=>{
+    const btn = e.target.closest('button[data-act]');
+    if(!btn) return;
+    const p = products.find(x=>x.id===btn.dataset.id);
+    if(btn.dataset.act==='produce') openProduceForm(p);
+    else openProductForm(p);
+  });
+}
+
+function openProductForm(existing){
+  if(ingredients.length===0){
+    toast('Add ingredients first, in the Stock tab');
+    return;
+  }
+  const recipe = existing ? existing.recipe.map(r=>({...r})) : [];
+  if(recipe.length===0) recipe.push({ingredientId: ingredients[0].id, qty:''});
+
+  function recipeRowsHtml(){
+    return recipe.map((r,idx)=>`
+      <div class="recipe-line" data-idx="${idx}">
+        <select data-f="ingredientId">
+          ${ingredients.map(i=>`<option value="${i.id}" ${r.ingredientId===i.id?'selected':''}>${esc(i.name)} (${i.unit})</option>`).join('')}
+        </select>
+        <input data-f="qty" type="number" min="0" step="any" placeholder="qty" value="${r.qty}">
+        <button data-act="removeLine" type="button">×</button>
+      </div>
+    `).join('');
+  }
+
+  openSheet(`
+    <h3>${existing?'Edit Product':'Add Product'}</h3>
+    <label>Product Name</label>
+    <input id="fPName" value="${existing?esc(existing.name):''}" placeholder="e.g. Vanilla Tub 500ml">
+    <div class="form-row">
+      <div>
+        <label>Selling Price (₹)</label>
+        <input id="fPPrice" type="number" min="0" step="any" value="${existing?existing.price:''}">
+      </div>
+      <div>
+        <label>Current Stock (units)</label>
+        <input id="fPStock" type="number" min="0" step="any" value="${existing?existing.stock:0}">
+      </div>
+    </div>
+    <label style="margin-top:16px;">Recipe — per 1 unit produced</label>
+    <div id="recipeLines">${recipeRowsHtml()}</div>
+    <button class="btn btn-sm btn-ghost" id="addLineBtn" type="button" style="margin-top:8px;">+ Add Ingredient Line</button>
+    <div class="card" id="costPreview" style="margin-top:14px;"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost btn-block" id="cancelPBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="savePBtn">${existing?'Save':'Add'}</button>
+    </div>
+    ${existing?'<button class="btn btn-outline btn-block" style="margin-top:10px;color:var(--red)" id="delPBtn">Delete Product</button>':''}
+  `);
+
+  function syncRecipeFromDOM(){
+    $$('#recipeLines .recipe-line').forEach((line,idx)=>{
+      recipe[idx].ingredientId = line.querySelector('[data-f=ingredientId]').value;
+      recipe[idx].qty = line.querySelector('[data-f=qty]').value;
+    });
+  }
+  function updateCostPreview(){
+    const cost = recipe.reduce((sum,r)=>{
+      const ing = ingredients.find(i=>i.id===r.ingredientId);
+      const qty = parseFloat(r.qty)||0;
+      if(!ing) return sum;
+      return sum + (ing.rate||0)*qty;
+    }, 0);
+    const price = parseFloat($('#fPPrice').value)||0;
+    const margin = price - cost;
+    const marginPct = price>0 ? Math.round((margin/price)*100) : 0;
+    const marginColor = margin<0 ? 'var(--red-deep)' : 'var(--good)';
+    $('#costPreview').innerHTML = `
+      <div class="card-row"><span class="item-meta">Ingredient cost</span><span class="item-meta" style="font-weight:600;">${money(cost)}</span></div>
+      <div class="card-row" style="margin-top:4px;"><span class="item-meta">Margin at ${money(price)}</span><span class="item-meta" style="font-weight:600;color:${marginColor}">${money(margin)} (${marginPct}%)</span></div>
+    `;
+  }
+  $('#recipeLines').addEventListener('change', ()=>{ syncRecipeFromDOM(); updateCostPreview(); });
+  $('#recipeLines').addEventListener('input', ()=>{ syncRecipeFromDOM(); updateCostPreview(); });
+  $('#fPPrice').addEventListener('input', updateCostPreview);
+  $('#recipeLines').addEventListener('click', e=>{
+    const btn = e.target.closest('[data-act=removeLine]');
+    if(!btn) return;
+    syncRecipeFromDOM();
+    const idx = parseInt(btn.closest('.recipe-line').dataset.idx);
+    recipe.splice(idx,1);
+    $('#recipeLines').innerHTML = recipeRowsHtml();
+    updateCostPreview();
+  });
+  $('#addLineBtn').addEventListener('click', ()=>{
+    syncRecipeFromDOM();
+    recipe.push({ingredientId: ingredients[0].id, qty:''});
+    $('#recipeLines').innerHTML = recipeRowsHtml();
+    updateCostPreview();
+  });
+  updateCostPreview();
+  $('#cancelPBtn').addEventListener('click', closeSheet);
+  $('#savePBtn').addEventListener('click', async ()=>{
+    syncRecipeFromDOM();
+    const name = $('#fPName').value.trim();
+    const price = parseFloat($('#fPPrice').value)||0;
+    const stock = parseFloat($('#fPStock').value)||0;
+    if(!name){ toast('Enter a product name'); return; }
+    const cleanRecipe = recipe
+      .filter(r=>r.qty!=='' && parseFloat(r.qty)>0)
+      .map(r=>({ingredientId:r.ingredientId, qty:parseFloat(r.qty)}));
+    if(existing){
+      existing.name=name; existing.price=price; existing.stock=stock; existing.recipe=cleanRecipe;
+    } else {
+      products.push({id:uid(), name, price, stock, recipe:cleanRecipe});
+    }
+    await saveProducts();
+    closeSheet(); render();
+    toast(existing?'Product updated':'Product added');
+  });
+  if(existing){
+    $('#delPBtn').addEventListener('click', async ()=>{
+      if(!confirm(`Delete ${existing.name}?`)) return;
+      products = products.filter(p=>p.id!==existing.id);
+      await saveProducts();
+      closeSheet(); render();
+    });
+  }
+}
+
+function openProduceForm(product){
+  openSheet(`
+    <h3>Produce Batch — ${esc(product.name)}</h3>
+    <label>Batches to produce (units)</label>
+    <input id="fBatchQty" type="number" min="1" step="1" value="1">
+    <div id="produceCheck" class="section-sub" style="margin-top:10px;"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost btn-block" id="cancelProdBtn">Cancel</button>
+      <button class="btn btn-primary btn-block" id="confirmProdBtn">Produce</button>
+    </div>
+  `);
+  function updateCheck(){
+    const qty = parseInt($('#fBatchQty').value)||0;
+    const lines = (product.recipe||[]).map(r=>{
+      const ing = ingredients.find(i=>i.id===r.ingredientId);
+      if(!ing) return '';
+      const needed = r.qty*qty;
+      const ok = ing.stock >= needed;
+      return `<div style="display:flex;justify-content:space-between;padding:3px 0;color:${ok?'var(--good)':'var(--red-deep)'}">
+        <span>${esc(ing.name)}</span><span>need ${needed}${ing.unit} · have ${ing.stock}${ing.unit}</span>
+      </div>`;
+    }).join('');
+    $('#produceCheck').innerHTML = lines || 'No recipe set for this product — stock will just be added.';
+  }
+  $('#fBatchQty').addEventListener('input', updateCheck);
+  updateCheck();
+  $('#cancelProdBtn').addEventListener('click', closeSheet);
+  $('#confirmProdBtn').addEventListener('click', async ()=>{
+    const qty = parseInt($('#fBatchQty').value)||0;
+    if(qty<=0){ toast('Enter a valid batch quantity'); return; }
+    for(const r of (product.recipe||[])){
+      const ing = ingredients.find(i=>i.id===r.ingredientId);
+      if(!ing || ing.stock < r.qty*qty){
+        toast(`Not enough ${ing?ing.name:'ingredient'} in stock`);
+        return;
+      }
+    }
+    (product.recipe||[]).forEach(r=>{
+      const ing = ingredients.find(i=>i.id===r.ingredientId);
+      ing.stock = Math.round((ing.stock - r.qty*qty)*1000)/1000;
+    });
+    product.stock += qty;
+    await Promise.all([saveIngredients(), saveProducts()]);
+    closeSheet(); render();
+    toast(`Produced ${qty} × ${product.name}`);
+  });
+}
+
+// ================= REPORTS TAB =================
+function saleCost(s){
+  return s.items.reduce((a,it)=>a + (it.cost!=null ? it.cost : computeProductCost(products.find(p=>p.id===it.productId)||{recipe:[]}))*it.qty, 0);
+}
+
+function renderReports(main){
+  const todayStr = new Date().toDateString();
+  const todaySales = sales.filter(s=>new Date(s.ts).toDateString()===todayStr);
+  const todayTotal = todaySales.reduce((a,s)=>a+s.total,0);
+  const todayCost = todaySales.reduce((a,s)=>a+saleCost(s),0);
+  const todayProfit = todayTotal - todayCost;
+  const todayMarginPct = todayTotal>0 ? Math.round((todayProfit/todayTotal)*100) : 0;
+  const totalStockValue = products.reduce((a,p)=>a+p.stock*p.price,0);
+  const profitColor = todayProfit<0 ? 'var(--red-deep)' : 'var(--good)';
+
+  main.innerHTML = `
+    <h2 class="section-title">Reports</h2>
+    <p class="section-sub">Today's sales, cost, and profit — plus current stock at a glance.</p>
+    <div class="stat-grid">
+      <div class="stat"><div class="n">${money(todayTotal)}</div><div class="l">Today's Sales</div></div>
+      <div class="stat"><div class="n">${money(todayCost)}</div><div class="l">Ingredient Cost</div></div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat"><div class="n" style="color:${profitColor}">${money(todayProfit)}</div><div class="l">Today's Profit (${todayMarginPct}%)</div></div>
+      <div class="stat"><div class="n">${todaySales.length}</div><div class="l">Bills Today</div></div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat"><div class="n">${money(totalStockValue)}</div><div class="l">Finished Stock Value</div></div>
+      <div class="stat"><div class="n">${ingredients.length}</div><div class="l">Ingredients Tracked</div></div>
+    </div>
+    <h2 class="section-title" style="margin-top:6px;">Recent sales</h2>
+    <div id="salesList" style="margin-top:10px;"></div>
+  `;
+  const list = $('#salesList');
+  if(sales.length===0){
+    list.innerHTML = `<div class="empty"><p>No sales logged yet.</p></div>`;
+    return;
+  }
+  sales.slice(0,25).forEach(s=>{
+    const cost = saleCost(s);
+    const profit = s.total - cost;
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = `
+      <div class="card-row">
+        <div>
+          <div class="item-name">${money(s.total)} <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:400;color:${profit<0?'var(--red-deep)':'var(--good)'}">· profit ${money(profit)}</span></div>
+          <div class="item-meta">${new Date(s.ts).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+          <div class="item-meta" style="margin-top:4px;">${esc(s.items.map(i=>`${i.name} ×${i.qty}`).join(', '))}</div>
+        </div>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+// ---------- Sheet helpers ----------
+function openSheet(html){
+  $('#sheetContent').innerHTML = html;
+  $('#sheetBackdrop').classList.add('open');
+}
+function closeSheet(){
+  $('#sheetBackdrop').classList.remove('open');
+}
+$('#sheetBackdrop').addEventListener('click', e=>{
+  if(e.target===$('#sheetBackdrop')) closeSheet();
+});
+
+function computeProductCost(product){
+  return (product.recipe||[]).reduce((sum,r)=>{
+    const ing = ingredients.find(i=>i.id===r.ingredientId);
+    if(!ing) return sum;
+    return sum + (ing.rate||0)*r.qty;
+  }, 0);
+}
+
+function esc(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- Init ----------
+(async function init(){
+  await loadAll();
+  render();
+})();
+</script>
+</body>
+</html>
