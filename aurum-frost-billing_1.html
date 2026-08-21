@@ -749,24 +749,105 @@ function showReceipt(sale){
       <div class="receipt-meta">${new Date(sale.ts).toLocaleString('en-IN')}</div>
     </div>
     <div class="sheet-actions">
-      <button class="btn btn-outline btn-block" id="shareBillBtn">Share</button>
+      <button class="btn btn-outline btn-block" id="shareBillBtn">Share Receipt</button>
       <button class="btn btn-primary btn-block" id="doneBillBtn">Done</button>
     </div>
   `);
   $('#doneBillBtn').addEventListener('click', closeSheet);
   $('#shareBillBtn').addEventListener('click', async ()=>{
-    const text = `Aurum & Frost\n${sale.items.map(it=>`${it.name} x${it.qty} - ${money(it.qty*it.price)}`).join('\n')}\nTotal: ${money(sale.total)}\n${new Date(sale.ts).toLocaleString('en-IN')}`;
-    if(navigator.share){
-      try{ await navigator.share({text}); }catch(e){}
-    } else {
-      try{
-        await navigator.clipboard.writeText(text);
-        toast('Bill copied — paste to share');
-      }catch(e){
-        toast('Could not share automatically');
+    const btn = $('#shareBillBtn');
+    const original = btn.textContent;
+    btn.textContent = 'Preparing receipt…';
+    btn.disabled = true;
+    try{
+      if(typeof window.jspdf === 'undefined'){
+        toast('PDF library still loading — try again in a moment');
+        return;
       }
+      const blob = buildReceiptPdfBlob(sale);
+      const fileName = `Aurum-Frost-Receipt-${sale.id}.pdf`;
+      const file = new File([blob], fileName, {type:'application/pdf'});
+
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        try{
+          await navigator.share({files:[file], title:'Aurum & Frost Receipt', text:'Your receipt from Aurum & Frost'});
+        }catch(e){
+          if(e.name !== 'AbortError') downloadPdfFallback(blob, fileName);
+        }
+      } else {
+        downloadPdfFallback(blob, fileName);
+      }
+    }catch(e){
+      console.error(e);
+      toast('Could not generate receipt');
+    }finally{
+      btn.textContent = original;
+      btn.disabled = false;
     }
   });
+}
+
+function buildReceiptPdfBlob(sale){
+  const { jsPDF } = window.jspdf;
+  const targetWidth = 300;
+  const lineHeight = 20;
+  const headerHeight = 130;
+  const footerHeight = 70;
+  // jsPDF's format:[a,b] always makes the SMALLER number the width and the
+  // LARGER one the height (it forces portrait). Guarantee height is always
+  // comfortably bigger than width so our narrow receipt shape is preserved
+  // even for a single-item sale.
+  const contentHeight = headerHeight + sale.items.length*lineHeight + footerHeight;
+  const targetHeight = Math.max(contentHeight, targetWidth + 10);
+
+  const doc = new jsPDF({unit:'pt', format:[targetWidth, targetHeight]});
+  // Read back the real page size rather than trusting our own numbers —
+  // this is what actually gets drawn on.
+  const pageW = doc.internal.pageSize.getWidth();
+  const cx = pageW/2;
+  const margin = 22;
+  const red = [122,35,35];
+  const ink = [42,23,20];
+  const muted = [130,90,80];
+  let y = 34;
+
+  doc.setFont('times','italic'); doc.setFontSize(18); doc.setTextColor(...red);
+  doc.text('Aurum & Frost', cx, y, {align:'center'});
+  y += 16;
+  doc.setFont('courier','normal'); doc.setFontSize(7.5); doc.setTextColor(...muted);
+  doc.text('BLISS · CREAMY · DELIGHT', cx, y, {align:'center'});
+  y += 22;
+  doc.setDrawColor(220,190,150);
+  doc.setLineDashPattern([2,2],0);
+  doc.line(margin, y, pageW-margin, y);
+  doc.setLineDashPattern([],0);
+  y += 22;
+
+  sale.items.forEach(it=>{
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...ink);
+    doc.text(`${it.name} × ${it.qty}`, margin, y);
+    doc.text(moneyPdf(it.qty*it.price), pageW-margin, y, {align:'right'});
+    y += lineHeight;
+  });
+
+  y += 4;
+  doc.setDrawColor(...red);
+  doc.line(margin, y, pageW-margin, y);
+  y += 22;
+  doc.setFont('times','bold'); doc.setFontSize(14); doc.setTextColor(...red);
+  doc.text('Total', margin, y);
+  doc.text(moneyPdf(sale.total), pageW-margin, y, {align:'right'});
+  y += 26;
+
+  doc.setFont('courier','normal'); doc.setFontSize(7.5); doc.setTextColor(...muted);
+  doc.text(new Date(sale.ts).toLocaleString('en-IN'), cx, y, {align:'center'});
+  y += 16;
+  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(...red);
+  doc.text('Made fresh, ingredient by ingredient', cx, y, {align:'center'});
+  y += 11;
+  doc.text('— no code names needed.', cx, y, {align:'center'});
+
+  return doc.output('blob');
 }
 
 // ================= STOCK TAB (ingredients) =================
