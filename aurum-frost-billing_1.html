@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#7A2323">
 <title>Aurum & Frost — Billing</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -506,6 +509,30 @@ function toast(msg){
 }
 
 // ---------- Storage ----------
+// Uses Claude's artifact storage when running inside Claude, and falls back
+// to the browser's own localStorage when hosted standalone (e.g. after
+// deploying this file to your own site / wrapping it into an APK).
+const usingClaudeStorage = (typeof window.storage !== 'undefined');
+
+async function storageGet(key){
+  if(usingClaudeStorage){
+    try{
+      const r = await window.storage.get(key, false);
+      return r ? r.value : null;
+    }catch(e){ return null; }
+  }
+  try{ return localStorage.getItem(key); }catch(e){ return null; }
+}
+async function storageSet(key, value){
+  if(usingClaudeStorage){
+    try{
+      const r = await window.storage.set(key, value, false);
+      return !!r;
+    }catch(e){ return false; }
+  }
+  try{ localStorage.setItem(key, value); return true; }catch(e){ return false; }
+}
+
 async function loadAll(){
   try{
     const [i,p,s] = await Promise.all([
@@ -523,22 +550,16 @@ async function loadAll(){
 }
 async function safeGet(key){
   try{
-    const r = await window.storage.get(key, false);
-    return r ? JSON.parse(r.value) : null;
+    const val = await storageGet(key);
+    return val ? JSON.parse(val) : null;
   }catch(e){
     return null;
   }
 }
 async function save(key, val){
-  try{
-    const r = await window.storage.set(key, JSON.stringify(val), false);
-    if(!r) toast('Save failed — try again');
-    return !!r;
-  }catch(e){
-    console.error(e);
-    toast('Save failed — try again');
-    return false;
-  }
+  const ok = await storageSet(key, JSON.stringify(val));
+  if(!ok) toast('Save failed — try again');
+  return ok;
 }
 const saveIngredients = () => save('af-ingredients', ingredients);
 const saveProducts = () => save('af-products', products);
@@ -1172,6 +1193,12 @@ function esc(s){
   await loadAll();
   render();
 })();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>
