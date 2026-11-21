@@ -466,6 +466,11 @@
   table.qt input{width:62px;padding:6px 6px;font-size:13px;}
   .q-pos{color:var(--good);}
   .q-neg{color:var(--red-deep);}
+  .q-info{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);line-height:1.6;padding-bottom:12px;}
+  .q-isum{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);}
+  .q-isum:empty{display:none;}
+  .q-isum b{font-family:'Fraunces',serif;font-weight:600;color:var(--red-deep);}
+  table.qt td input{width:56px;}
 </style>
 </head>
 <body>
@@ -495,7 +500,7 @@
 
 <div class="cart-bar hidden" id="quoteBar">
   <div>
-    <div class="cnt" id="qbCnt">Suggested rate</div>
+    <div class="cnt" id="qbCnt">Order value</div>
     <div class="amt" id="qbAmt">₹0</div>
   </div>
   <button class="btn btn-primary" id="qbBtn">See details</button>
@@ -581,17 +586,19 @@ async function storageSet(key, value){
 
 async function loadAll(){
   try{
-    const [i,p,s,qs,qd] = await Promise.all([
+    const [i,p,s,qs,qd,ov] = await Promise.all([
       safeGet('af-ingredients'),
       safeGet('af-products'),
       safeGet('af-sales'),
       safeGet('af-quotes'),
       safeGet('af-quote-draft'),
+      safeGet('af-overheads'),
     ]);
     ingredients = i || [];
     products = p || [];
     sales = s || [];
     savedQuotes = Array.isArray(qs) ? qs : [];
+    overheads = Array.isArray(ov) ? ov : [];
     quote = normQuote(qd);
   }catch(e){
     console.error('Load error', e);
@@ -653,7 +660,7 @@ function render(){
   const main = $('#main');
   if(currentTab==='bill') renderBill(main);
   else if(currentTab==='stock') renderStock(main);
-  else if(currentTab==='recipes') renderRecipes(main);
+  else if(currentTab==='recipes'){ renderRecipes(main); renderOverheadCard(main); }
   else if(currentTab==='reports') renderReports(main);
   else if(currentTab==='quote') renderQuote(main);
   renderCartBar();
@@ -923,7 +930,7 @@ function renderStock(main){
       <div class="card-row">
         <div>
           <div class="item-name">${esc(ing.name)}</div>
-          <div class="item-meta">${ing.stock} ${esc(ing.unit)} in stock ${ing.rate?`· ${money(ing.rate)}/${esc(ing.unit)}`:'· no cost set'}</div>
+          <div class="item-meta">${ing.stock} ${esc(ing.unit)} in stock ${ing.rate?`· ${rateTxt(ing.rate)}/${esc(ing.unit)}`:'· no cost set'}</div>
         </div>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-sm btn-ghost" data-act="add" data-id="${ing.id}">+ Stock</button>
@@ -951,7 +958,7 @@ function openIngredientForm(existing){
       <div>
         <label>Unit</label>
         <select id="fUnit">
-          ${['ml','L','g','kg','pcs'].map(u=>`<option value="${u}" ${existing&&existing.unit===u?'selected':''}>${u}</option>`).join('')}
+          ${['ml','L','g','kg','pcs','pod'].map(u=>`<option value="${u}" ${existing&&existing.unit===u?'selected':''}>${u}</option>`).join('')}
         </select>
       </div>
       <div>
@@ -959,26 +966,42 @@ function openIngredientForm(existing){
         <input id="fStock" type="number" min="0" step="any" value="${existing?existing.stock:0}">
       </div>
     </div>
-    <label>Cost per Unit (₹)</label>
-    <input id="fRate" type="number" min="0" step="any" value="${existing?(existing.rate||0):0}" placeholder="e.g. 60 per L">
-    <p class="section-sub" style="margin-top:4px;">What you pay per ${existing?esc(existing.unit):'unit'} — used to work out product cost.</p>
+    <label>What you bought</label>
+    <div class="form-row">
+      <div><input id="fPackQty" type="number" min="0" step="any" inputmode="decimal" value="${existing?(existing.packQty||1):''}" placeholder="Quantity, e.g. 1"></div>
+      <div><input id="fPackPrice" type="number" min="0" step="any" inputmode="decimal" value="${existing?(existing.packPrice!=null?existing.packPrice:(existing.rate||'')):''}" placeholder="Paid ₹, e.g. 300"></div>
+    </div>
+    <p class="section-sub" id="fRateOut" style="margin-top:6px;font-weight:600;"></p>
+    <p class="section-sub" style="margin-top:2px;">Enter the quantity (in the unit above) and the price you paid for it, for example 1 L cream for ₹300, or 10 pods for ₹1,500. The cost per unit is worked out for you and used to cost your flavours.</p>
     <div class="sheet-actions">
       <button class="btn btn-ghost btn-block" id="cancelIngBtn">Cancel</button>
       <button class="btn btn-primary btn-block" id="saveIngBtn">${existing?'Save':'Add'}</button>
     </div>
     ${existing?'<button class="btn btn-outline btn-block" style="margin-top:10px;color:var(--red)" id="delIngBtn">Delete Ingredient</button>':''}
   `);
+  function updateRateOut(){
+    const pq = parseFloat($('#fPackQty').value)||0;
+    const pp = parseFloat($('#fPackPrice').value)||0;
+    const u = $('#fUnit').value;
+    $('#fRateOut').textContent = (pq>0 && pp>0) ? `= ${rateTxt(pp/pq)} per ${u}` : `Cost per ${u} will show here`;
+  }
+  ['#fPackQty','#fPackPrice'].forEach(sel=>$(sel).addEventListener('input', updateRateOut));
+  $('#fUnit').addEventListener('change', updateRateOut);
+  updateRateOut();
   $('#cancelIngBtn').addEventListener('click', closeSheet);
   $('#saveIngBtn').addEventListener('click', async ()=>{
     const name = $('#fName').value.trim();
     const unit = $('#fUnit').value;
     const stock = parseFloat($('#fStock').value)||0;
-    const rate = parseFloat($('#fRate').value)||0;
+    const packQty = parseFloat($('#fPackQty').value)||0;
+    const packPrice = parseFloat($('#fPackPrice').value)||0;
+    const rate = (packQty>0 && packPrice>0) ? packPrice/packQty : 0;
     if(!name){ toast('Enter a name'); return; }
     if(existing){
       existing.name=name; existing.unit=unit; existing.stock=stock; existing.rate=rate;
+      existing.packQty=packQty; existing.packPrice=packPrice;
     } else {
-      ingredients.push({id:uid(), name, unit, stock, rate});
+      ingredients.push({id:uid(), name, unit, stock, rate, packQty, packPrice});
     }
     await saveIngredients();
     closeSheet(); render();
@@ -999,10 +1022,10 @@ function openAddStock(ing){
     <h3>Add Stock — ${esc(ing.name)}</h3>
     <label>Quantity to add (${esc(ing.unit)})</label>
     <input id="fAdd" type="number" min="0" step="any" placeholder="0">
-    <p class="section-sub" style="margin-top:8px;">Current: ${ing.stock} ${esc(ing.unit)} · Cost: ${ing.rate?money(ing.rate)+'/'+esc(ing.unit):'not set'}</p>
-    <label>Cost per ${esc(ing.unit)} this purchase (₹) — optional</label>
-    <input id="fPurchaseRate" type="number" min="0" step="any" placeholder="Leave blank to keep ${ing.rate||0}">
-    <p class="section-sub" style="margin-top:4px;">If the price changed this time, enter it here — it'll update the cost used for all future product costing.</p>
+    <p class="section-sub" style="margin-top:8px;">Current: ${ing.stock} ${esc(ing.unit)} · Cost: ${ing.rate?rateTxt(ing.rate)+'/'+esc(ing.unit):'not set'}</p>
+    <label>Total paid for this quantity (₹) — optional</label>
+    <input id="fPurchasePaid" type="number" min="0" step="any" inputmode="decimal" placeholder="Leave blank to keep the current cost">
+    <p class="section-sub" style="margin-top:4px;">If the price changed this time, enter what you paid for the quantity above. The cost per ${esc(ing.unit)} is worked out and used for all future costing.</p>
     <div class="sheet-actions">
       <button class="btn btn-ghost btn-block" id="cancelAddBtn">Cancel</button>
       <button class="btn btn-primary btn-block" id="confirmAddBtn">Add Stock</button>
@@ -1012,9 +1035,9 @@ function openAddStock(ing){
   $('#confirmAddBtn').addEventListener('click', async ()=>{
     const qty = parseFloat($('#fAdd').value);
     if(!qty || qty<=0){ toast('Enter a valid quantity'); return; }
-    const newRate = parseFloat($('#fPurchaseRate').value);
-    ing.stock += qty;
-    if(newRate && newRate>0) ing.rate = newRate;
+    const paid = parseFloat($('#fPurchasePaid').value);
+    ing.stock = Math.round((ing.stock + qty)*1000)/1000;
+    if(paid && paid>0){ ing.rate = paid/qty; ing.packQty = qty; ing.packPrice = paid; }
     await saveIngredients();
     closeSheet(); render();
     toast(`Added ${qty} ${ing.unit} of ${ing.name}`);
@@ -1059,7 +1082,7 @@ function renderRecipes(main){
         <div>
           <div class="item-name">${esc(p.name)}</div>
           <div class="item-meta">${money(p.price)} · ${p.stock} in stock</div>
-          ${recipeText ? `<div class="item-meta" style="margin-top:4px;opacity:.85">Uses: ${esc(recipeText)}</div>` : ''}
+          ${recipeText ? `<div class="item-meta" style="margin-top:4px;opacity:.85">Per batch${prodYield(p)!==1?` (makes ${prodYield(p)})`:''}: ${esc(recipeText)}</div>` : ''}
           <div class="item-meta" style="margin-top:4px;color:${marginColor}">Cost ${money(cost)} · Margin ${money(margin)} (${marginPct}%)</div>
         </div>
       </div>
@@ -1105,7 +1128,7 @@ function openProductForm(existing){
     <input id="fPName" value="${existing?esc(existing.name):''}" placeholder="e.g. Vanilla Tub 500ml">
     <div class="form-row">
       <div>
-        <label>Selling Price (₹)</label>
+        <label>Selling Price per unit (₹)</label>
         <input id="fPPrice" type="number" min="0" step="any" value="${existing?existing.price:''}">
       </div>
       <div>
@@ -1113,7 +1136,17 @@ function openProductForm(existing){
         <input id="fPStock" type="number" min="0" step="any" value="${existing?existing.stock:0}">
       </div>
     </div>
-    <label style="margin-top:16px;">Recipe — per 1 unit produced</label>
+    <div class="form-row">
+      <div>
+        <label>One batch makes (units)</label>
+        <input id="fPYield" type="number" min="0" step="any" inputmode="decimal" value="${existing?(existing.batchYield||1):''}" placeholder="e.g. 6">
+      </div>
+      <div>
+        <label>Sold as</label>
+        <input id="fPUnit" value="${existing?esc(existing.unitLabel||''):''}" placeholder="e.g. 500 ml tub">
+      </div>
+    </div>
+    <label style="margin-top:16px;">Recipe — ingredients for one batch</label>
     <div id="recipeLines">${recipeRowsHtml()}</div>
     <button class="btn btn-sm btn-ghost" id="addLineBtn" type="button" style="margin-top:8px;">+ Add Ingredient Line</button>
     <div class="card" id="costPreview" style="margin-top:14px;"></div>
@@ -1138,17 +1171,23 @@ function openProductForm(existing){
       return sum + (ing.rate||0)*qty;
     }, 0);
     const price = parseFloat($('#fPPrice').value)||0;
-    const margin = price - cost;
+    const yieldN = parseFloat($('#fPYield').value)||1;
+    const ovUnit = overheadPerBatch()/yieldN + overheadPerUnit();
+    const perUnit = cost/yieldN + ovUnit;
+    const margin = price - perUnit;
     const marginPct = price>0 ? Math.round((margin/price)*100) : 0;
     const marginColor = margin<0 ? 'var(--red-deep)' : 'var(--good)';
     $('#costPreview').innerHTML = `
-      <div class="card-row"><span class="item-meta">Ingredient cost</span><span class="item-meta" style="font-weight:600;">${money(cost)}</span></div>
-      <div class="card-row" style="margin-top:4px;"><span class="item-meta">Margin at ${money(price)}</span><span class="item-meta" style="font-weight:600;color:${marginColor}">${money(margin)} (${marginPct}%)</span></div>
+      <div class="card-row"><span class="item-meta">Ingredient cost for one batch</span><span class="item-meta" style="font-weight:600;">${money(cost)}</span></div>
+      ${overheads.length ? `<div class="card-row" style="margin-top:4px;"><span class="item-meta">Production costs per unit</span><span class="item-meta" style="font-weight:600;">${money(ovUnit)}</span></div>` : ''}
+      <div class="card-row" style="margin-top:4px;"><span class="item-meta">Cost per unit (ingredients ÷ ${yieldN}${overheads.length?' + production':''})</span><span class="item-meta" style="font-weight:600;">${money(perUnit)}</span></div>
+      <div class="card-row" style="margin-top:4px;"><span class="item-meta">Margin at ${money(price)} per unit</span><span class="item-meta" style="font-weight:600;color:${marginColor}">${money(margin)} (${marginPct}%)</span></div>
     `;
   }
   $('#recipeLines').addEventListener('change', ()=>{ syncRecipeFromDOM(); updateCostPreview(); });
   $('#recipeLines').addEventListener('input', ()=>{ syncRecipeFromDOM(); updateCostPreview(); });
   $('#fPPrice').addEventListener('input', updateCostPreview);
+  $('#fPYield').addEventListener('input', updateCostPreview);
   $('#recipeLines').addEventListener('click', e=>{
     const btn = e.target.closest('[data-act=removeLine]');
     if(!btn) return;
@@ -1175,10 +1214,13 @@ function openProductForm(existing){
     const cleanRecipe = recipe
       .filter(r=>r.qty!=='' && parseFloat(r.qty)>0)
       .map(r=>({ingredientId:r.ingredientId, qty:parseFloat(r.qty)}));
+    const batchYield = parseFloat($('#fPYield').value)||1;
+    const unitLabel = $('#fPUnit').value.trim();
     if(existing){
       existing.name=name; existing.price=price; existing.stock=stock; existing.recipe=cleanRecipe;
+      existing.batchYield=batchYield; existing.unitLabel=unitLabel;
     } else {
-      products.push({id:uid(), name, price, stock, recipe:cleanRecipe});
+      products.push({id:uid(), name, price, stock, recipe:cleanRecipe, batchYield, unitLabel});
     }
     await saveProducts();
     closeSheet(); render();
@@ -1195,10 +1237,12 @@ function openProductForm(existing){
 }
 
 function openProduceForm(product){
+  const yieldN = prodYield(product);
   openSheet(`
     <h3>Produce Batch — ${esc(product.name)}</h3>
-    <label>Batches to produce (units)</label>
-    <input id="fBatchQty" type="number" min="1" step="1" value="1">
+    <label>Batches to make${yieldN!==1?` (1 batch = ${yieldN} units)`:''}</label>
+    <input id="fBatchQty" type="number" min="0" step="any" inputmode="decimal" value="1">
+    <div id="produceUnits" class="section-sub" style="margin-top:8px;font-weight:600;"></div>
     <div id="produceCheck" class="section-sub" style="margin-top:10px;"></div>
     <div class="sheet-actions">
       <button class="btn btn-ghost btn-block" id="cancelProdBtn">Cancel</button>
@@ -1206,11 +1250,13 @@ function openProduceForm(product){
     </div>
   `);
   function updateCheck(){
-    const qty = parseInt($('#fBatchQty').value)||0;
+    const batches = parseFloat($('#fBatchQty').value)||0;
+    const units = Math.round(batches*yieldN*1000)/1000;
+    $('#produceUnits').textContent = `That makes ${units} unit${units===1?'':'s'}.`;
     const lines = (product.recipe||[]).map(r=>{
       const ing = ingredients.find(i=>i.id===r.ingredientId);
       if(!ing) return '';
-      const needed = r.qty*qty;
+      const needed = Math.round(r.qty*batches*1000)/1000;
       const ok = ing.stock >= needed;
       return `<div style="display:flex;justify-content:space-between;padding:3px 0;color:${ok?'var(--good)':'var(--red-deep)'}">
         <span>${esc(ing.name)}</span><span>need ${needed}${ing.unit} · have ${ing.stock}${ing.unit}</span>
@@ -1222,23 +1268,24 @@ function openProduceForm(product){
   updateCheck();
   $('#cancelProdBtn').addEventListener('click', closeSheet);
   $('#confirmProdBtn').addEventListener('click', async ()=>{
-    const qty = parseInt($('#fBatchQty').value)||0;
-    if(qty<=0){ toast('Enter a valid batch quantity'); return; }
+    const batches = parseFloat($('#fBatchQty').value)||0;
+    if(batches<=0){ toast('Enter how many batches'); return; }
     for(const r of (product.recipe||[])){
       const ing = ingredients.find(i=>i.id===r.ingredientId);
-      if(!ing || ing.stock < r.qty*qty){
+      if(!ing || ing.stock < r.qty*batches - 1e-9){
         toast(`Not enough ${ing?ing.name:'ingredient'} in stock`);
         return;
       }
     }
     (product.recipe||[]).forEach(r=>{
       const ing = ingredients.find(i=>i.id===r.ingredientId);
-      ing.stock = Math.round((ing.stock - r.qty*qty)*1000)/1000;
+      ing.stock = Math.round((ing.stock - r.qty*batches)*1000)/1000;
     });
-    product.stock += qty;
+    const units = Math.round(batches*yieldN*1000)/1000;
+    product.stock = Math.round((product.stock + units)*1000)/1000;
     await Promise.all([saveIngredients(), saveProducts()]);
     closeSheet(); render();
-    toast(`Produced ${qty} × ${product.name}`);
+    toast(`Produced ${units} × ${product.name}`);
   });
 }
 
@@ -1264,7 +1311,7 @@ function renderReports(main){
     <p class="section-sub">Today's sales, cost, and profit — plus current stock at a glance.</p>
     <div class="stat-grid">
       <div class="stat"><div class="n">${money(todayTotal)}</div><div class="l">Today's Sales</div></div>
-      <div class="stat"><div class="n">${money(todayCost)}</div><div class="l">Ingredient Cost</div></div>
+      <div class="stat"><div class="n">${money(todayCost)}</div><div class="l">Total Cost</div></div>
     </div>
     <div class="stat-grid">
       <div class="stat"><div class="n" style="color:${profitColor}">${money(todayProfit)}</div><div class="l">Today's Profit (${todayMarginPct}%)</div></div>
@@ -1374,7 +1421,7 @@ async function sendReport(dateStr){
     // stat boxes
     const stats = [
       ['Revenue', moneyPdf(revenue)],
-      ['Ingredient Cost', moneyPdf(cost)],
+      ['Cost', moneyPdf(cost)],
       ['Profit', moneyPdf(profit)],
       ['Bills', String(daySales.length)],
     ];
@@ -1476,7 +1523,7 @@ async function backupData(){
     const payload = {
       app: 'aurum-frost-billing',
       exportedAt: new Date().toISOString(),
-      ingredients, products, sales, quotes: savedQuotes
+      ingredients, products, sales, quotes: savedQuotes, overheads
     };
     const dateStr = new Date().toISOString().slice(0,10);
     const fileName = `Aurum-Frost-Backup-${dateStr}.json`;
@@ -1539,7 +1586,8 @@ function restoreData(e){
     products = data.products;
     sales = data.sales;
     if(Array.isArray(data.quotes)) savedQuotes = data.quotes;
-    await Promise.all([saveIngredients(), saveProducts(), saveSales(), saveQuotes()]);
+    if(Array.isArray(data.overheads)) overheads = data.overheads;
+    await Promise.all([saveIngredients(), saveProducts(), saveSales(), saveQuotes(), saveOverheads()]);
     e.target.value = '';
     render();
     toast('Backup restored');
@@ -1547,59 +1595,198 @@ function restoreData(e){
   reader.readAsText(file);
 }
 
+// ================= SHARED HELPERS (costing) =================
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const blankIf0 = x => (x===0 || x==null) ? '' : x;
+const round2 = n => Math.round(n*100)/100;
+const rate2 = n => '₹' + num(n).toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2});
+const rate2Pdf = n => 'Rs. ' + num(n).toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2});
+const rupee0 = n => (n<0?'-':'') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN');
+// Rates per tiny unit (e.g. ₹0.3 per ml) need more decimals than 2.
+const rateTxt = n => { n = num(n); const d = n>=10 ? 2 : 4; const f = Math.pow(10,d); return '₹' + (Math.round(n*f)/f).toLocaleString('en-IN',{maximumFractionDigits:d}); };
+
+// A recipe is written per BATCH. batchYield says how many units (tubs) a batch makes.
+// Older products have no batchYield, which counts as 1 (recipe per single unit, as before).
+function prodYield(p){ return (p && num(p.batchYield) > 0) ? num(p.batchYield) : 1; }
+function productBatchCost(p){
+  return (p.recipe||[]).reduce((s,r)=>{
+    const g = ingredients.find(i=>i.id===r.ingredientId);
+    return g ? s + (g.rate||0)*num(r.qty) : s;
+  }, 0);
+}
+
+// ================= PRODUCTION COSTS (labour, electricity, gas, packaging) =================
+// Set once, added to the cost of every flavour. Each line is "₹ cost covers N batches (or tubs)",
+// e.g. gas cylinder ₹1,900 covers 60 batches = ₹31.67 per batch.
+let overheads = [];
+const saveOverheads = () => save('af-overheads', overheads);
+const ovAmount = o => (num(o.covers)>0 ? num(o.cost)/num(o.covers) : 0);
+function overheadPerBatch(){ return overheads.filter(o=>o.per==='batch').reduce((s,o)=>s+ovAmount(o), 0); }
+function overheadPerUnit(){ return overheads.filter(o=>o.per==='unit').reduce((s,o)=>s+ovAmount(o), 0); }
+function productOverheadPerUnit(p){ return overheadPerBatch()/prodYield(p) + overheadPerUnit(); }
+
+const OV_PRESETS = [
+  {label:'Labour', per:'batch'},
+  {label:'Electricity', per:'batch'},
+  {label:'Gas', per:'batch'},
+  {label:'Tub, lid and label', per:'unit'},
+];
+
+function renderOverheadCard(main){
+  const pb = overheadPerBatch(), pu = overheadPerUnit();
+  const list = overheads.map(o=>`<div class="q-row"><span>${esc(o.label)}</span><span>${rateTxt(ovAmount(o))} per ${o.per==='unit'?'tub':'batch'}</span></div>`).join('');
+  main.insertAdjacentHTML('afterbegin', `
+    <div class="card" id="ovCard">
+      <div class="card-row">
+        <div>
+          <div class="item-name">Production costs</div>
+          <div class="item-meta">Added to the cost of every flavour</div>
+        </div>
+        <button class="btn btn-sm btn-outline" id="ovEditBtn" type="button">${overheads.length?'Edit':'Add'}</button>
+      </div>
+      ${overheads.length ? `<div style="margin-top:8px;">${list}
+        <div class="q-row b"><span>Adds to every batch</span><span>${rateTxt(pb)}${pu>0?` + ${rateTxt(pu)} per tub`:''}</span></div></div>`
+        : '<p class="q-hint">Labour, electricity, gas and packaging. Add them once here and they are included in the cost of every flavour.</p>'}
+    </div>`);
+  $('#ovEditBtn').addEventListener('click', openOverheadForm);
+}
+
+function openOverheadForm(){
+  const lines = overheads.map(o=>({...o}));
+  if(lines.length===0) lines.push({id:uid(), label:'', cost:'', covers:1, per:'batch'});
+  const rowsHtml = () => lines.map((o,i)=>`
+    <div class="qline" data-i="${i}">
+      <div class="r1">
+        <input data-f="label" placeholder="e.g. Gas" value="${esc(o.label||'')}">
+        <button class="x" data-act="rm" type="button" aria-label="Remove cost">×</button>
+      </div>
+      <div class="r2" style="grid-template-columns:1fr 1fr 1fr;">
+        <div><small>Cost (₹)</small><input data-f="cost" type="number" inputmode="decimal" min="0" step="any" value="${esc(blankIf0(o.cost))}"></div>
+        <div><small>Covers</small><input data-f="covers" type="number" inputmode="decimal" min="0" step="any" value="${esc(blankIf0(o.covers))}"></div>
+        <div><small>Counted in</small><select data-f="per"><option value="batch" ${o.per==='unit'?'':'selected'}>batches</option><option value="unit" ${o.per==='unit'?'selected':''}>tubs</option></select></div>
+      </div>
+      <div class="q-info" data-calc="${i}" style="padding-bottom:0;margin-top:6px;"></div>
+    </div>`).join('');
+  openSheet(`
+    <div id="ovRoot">
+      <h3>Production costs</h3>
+      <p class="section-sub">Enter what you pay and how many batches (or tubs) it covers. For example, gas ₹1,900 covers 60 batches, or labour ₹150 covers 1 batch, or tub, lid and label ₹12 covers 1 tub.</p>
+      <div id="ovLines">${rowsHtml()}</div>
+      <div class="q-chips">
+        ${OV_PRESETS.map((p,i)=>`<button class="q-chip" data-act="add" data-p="${i}" type="button">+ ${esc(p.label)}</button>`).join('')}
+        <button class="q-chip" data-act="add" data-p="-1" type="button">+ Other</button>
+      </div>
+      <div class="card" id="ovTotal" style="margin-top:14px;"></div>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost btn-block" id="ovCancel" type="button">Cancel</button>
+        <button class="btn btn-primary btn-block" id="ovSave" type="button">Save</button>
+      </div>
+    </div>`);
+  function refreshOv(){
+    let pb = 0, pu = 0;
+    lines.forEach((o,i)=>{
+      const a = ovAmount(o);
+      if(o.per==='unit') pu += a; else pb += a;
+      const el = document.querySelector(`#ovLines [data-calc="${i}"]`);
+      if(el) el.textContent = a>0 ? `= ${rateTxt(a)} per ${o.per==='unit'?'tub':'batch'}` : '';
+    });
+    $('#ovTotal').innerHTML = `<div class="q-row" style="border:none;padding:0;"><span>Adds to every batch</span><span>${rateTxt(pb)}</span></div>
+      <div class="q-row" style="border:none;padding:6px 0 0;"><span>Adds to every tub</span><span>${rateTxt(pu)}</span></div>`;
+  }
+  function sync(){
+    document.querySelectorAll('#ovLines .qline').forEach(row=>{
+      const o = lines[+row.dataset.i];
+      row.querySelectorAll('[data-f]').forEach(el=>{ o[el.dataset.f] = el.value; });
+    });
+  }
+  refreshOv();
+  const root = $('#ovRoot');
+  root.addEventListener('input', e=>{ if(e.target.tagName==='SELECT') return; sync(); refreshOv(); });
+  root.addEventListener('change', e=>{ if(e.target.tagName==='SELECT'){ sync(); refreshOv(); } });
+  root.addEventListener('click', e=>{
+    const btn = e.target.closest('[data-act]');
+    if(!btn) return;
+    sync();
+    if(btn.dataset.act==='rm'){
+      lines.splice(+btn.closest('.qline').dataset.i, 1);
+      $('#ovLines').innerHTML = rowsHtml(); refreshOv();
+    } else if(btn.dataset.act==='add'){
+      const p = OV_PRESETS[+btn.dataset.p] || {label:'', per:'batch'};
+      lines.push({id:uid(), label:p.label, cost:'', covers:1, per:p.per});
+      $('#ovLines').innerHTML = rowsHtml(); refreshOv();
+    }
+  });
+  $('#ovCancel').addEventListener('click', closeSheet);
+  $('#ovSave').addEventListener('click', async ()=>{
+    sync();
+    overheads = lines
+      .filter(o=>String(o.label).trim() && num(o.cost)>0 && num(o.covers)>0)
+      .map(o=>({id:o.id||uid(), label:String(o.label).trim(), cost:num(o.cost), covers:num(o.covers), per:o.per==='unit'?'unit':'batch'}));
+    await saveOverheads();
+    closeSheet(); render();
+    toast('Production costs saved');
+  });
+}
+
 // ================= QUOTE TAB (cost calculator) =================
 let savedQuotes = [];
 let quote = null; // the quote being worked on (kept as a draft automatically)
 
-const QUOTE_UNITS = ['ml','L','g','kg','pcs'];
+// Labour, gas, electricity and packaging live in Production costs (Recipes tab).
+// These extras are for costs that belong to this one order.
 const EXTRA_PRESETS = [
-  {label:'Packaging', type:'unit'},
-  {label:'Labour', type:'unit'},
   {label:'Delivery', type:'order'},
   {label:'Ice box / cold chain', type:'order'},
 ];
 const MARGIN_LADDER = [20,30,40,50,60];
 
-const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
-const blankIf0 = x => (x===0 || x==null) ? '' : x;
-const rate2 = n => '₹' + num(n).toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2});
-const rate2Pdf = n => 'Rs. ' + num(n).toLocaleString('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2});
-const rupee0 = n => (n<0?'-':'') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN');
-const round2 = n => Math.round(n*100)/100;
-
 function blankQuote(){
-  return {id:null, name:'', customer:'', unitLabel:'', lines:[], extras:[],
-          wastage:5, margin:40, gst:0, validity:7, qty:50,
-          scenarios:[20,50,100,200], offer:null, notes:''};
+  return {id:null, name:'', customer:'', items:[], extras:[],
+          wastage:5, margin:40, gst:0, validity:7, steps:[0.5,1,2,4], notes:''};
 }
 function normQuote(d){
   const q = Object.assign(blankQuote(), d||{});
-  if(!Array.isArray(q.lines)) q.lines = [];
+  if(!Array.isArray(q.items)) q.items = [];
   if(!Array.isArray(q.extras)) q.extras = [];
-  if(!Array.isArray(q.scenarios) || q.scenarios.length!==4) q.scenarios = [20,50,100,200];
+  if(!Array.isArray(q.steps) || q.steps.length!==4) q.steps = [0.5,1,2,4];
   return q;
 }
 
-// Cost for an order of `qty` units. Per-order costs (delivery etc.) are spread
-// over the quantity, which is why a bigger order brings the cost per unit down.
-function calcQuote(q, qty){
-  qty = Math.max(0, num(qty));
-  const ing = q.lines.reduce((s,l)=>s + num(l.qty)*num(l.rate), 0);
-  const waste = ing * num(q.wastage)/100;
-  const perUnitExtra = q.extras.filter(e=>e.type==='unit').reduce((s,e)=>s+num(e.amount), 0);
-  const perOrderExtra = q.extras.filter(e=>e.type==='order').reduce((s,e)=>s+num(e.amount), 0);
-  const variable = ing + waste + perUnitExtra;
-  const totalCost = variable*qty + perOrderExtra;
-  const costPerUnit = qty>0 ? totalCost/qty : variable;
-  const m = Math.min(Math.max(num(q.margin),0),95)/100;
-  const suggested = costPerUnit/(1-m);
-  return {qty, ing, waste, perUnitExtra, perOrderExtra, variable, totalCost, costPerUnit, suggested, m};
-}
 // Round a rate up to the next 50 paise.
 function autoRate(x){ return Math.ceil(x*2 - 1e-9)/2; }
-function offerRate(q, c){ return (q.offer!=null && q.offer!=='') ? num(q.offer) : autoRate(c.suggested); }
-function evalOffer(q, c, r){
-  const rev = r*c.qty;
+function rateOf(r){ return (r.it.offer!=null && r.it.offer!=='') ? num(r.it.offer) : r.auto; }
+
+// Works out the whole order. `mult` scales every flavour's units (used to compare sizes).
+// Per-order costs (delivery etc.) are shared equally across all units, which is why a
+// bigger order brings the cost per unit down.
+function calcOrder(q, mult){
+  mult = (mult==null) ? 1 : mult;
+  const w = num(q.wastage)/100;
+  const perUnitExtra = q.extras.filter(e=>e.type==='unit').reduce((s,e)=>s+num(e.amount), 0);
+  const perOrderExtra = q.extras.filter(e=>e.type==='order').reduce((s,e)=>s+num(e.amount), 0);
+  const m = Math.min(Math.max(num(q.margin),0),95)/100;
+  const rows = q.items.map(it=>{
+    const p = products.find(x=>x.id===it.productId);
+    const qty = num(it.qty)*mult;
+    const batchCost = p ? productBatchCost(p) : 0;
+    const yieldN = prodYield(p);
+    const ingPerUnit = batchCost/yieldN;
+    const ovPerUnit = p ? productOverheadPerUnit(p) : 0;   // labour, gas, electricity, packaging
+    return {it, p, qty, batchCost, yieldN, ingPerUnit, ovPerUnit, waste: ingPerUnit*w};
+  });
+  const totalUnits = rows.reduce((s,r)=>s+r.qty, 0);
+  const share = totalUnits>0 ? perOrderExtra/totalUnits : 0;
+  rows.forEach(r=>{
+    r.variable = r.ingPerUnit + r.waste + r.ovPerUnit + perUnitExtra;
+    r.cost = r.variable + share;
+    r.suggested = r.cost/(1-m);
+    r.auto = autoRate(r.suggested);
+  });
+  const totalCost = rows.reduce((s,r)=>s + r.variable*r.qty, 0) + (totalUnits>0 ? perOrderExtra : 0);
+  return {rows, totalUnits, perUnitExtra, perOrderExtra, share, totalCost, m, w};
+}
+function evalOrder(q, c){
+  const rev = c.rows.reduce((s,r)=>s + r.qty*rateOf(r), 0);
   const profit = rev - c.totalCost;
   const marginPct = rev>0 ? profit/rev*100 : 0;
   const gstAmt = rev*num(q.gst)/100;
@@ -1616,26 +1803,24 @@ document.addEventListener('visibilitychange', ()=>{ if(document.hidden) flushDra
 window.addEventListener('pagehide', flushDraft);
 const saveQuotes = () => save('af-quotes', savedQuotes);
 
-function qLineHtml(l,i){
-  const linked = !!l.ingredientId;
-  const unit = l.unit || 'g';
+function qItemHtml(it,i){
   return `<div class="qline" data-i="${i}">
     <div class="r1">
-      <select data-f="src">
-        <option value="__custom" ${linked?'':'selected'}>Other (type a name)</option>
-        ${ingredients.map(g=>`<option value="${g.id}" ${l.ingredientId===g.id?'selected':''}>${esc(g.name)} (${esc(g.unit)})</option>`).join('')}
+      <select data-f="prod">
+        <option value="" ${it.productId?'':'selected'}>Choose a flavour…</option>
+        ${products.map(p=>`<option value="${p.id}" ${it.productId===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}
       </select>
-      <button class="x" data-act="rmLine" type="button" aria-label="Remove ingredient">×</button>
+      <button class="x" data-act="rmItem" type="button" aria-label="Remove flavour">×</button>
     </div>
-    ${linked ? '' : `<div class="r1" style="margin-top:8px;">
-      <input data-f="name" style="flex:1.7;" placeholder="e.g. Pistachio" value="${esc(l.name||'')}">
-      <select data-f="unit" style="flex:.7;">${QUOTE_UNITS.map(u=>`<option ${u===unit?'selected':''}>${u}</option>`).join('')}</select>
-    </div>`}
-    <div class="r2">
-      <div><small>Qty (${esc(unit)})</small><input data-f="qty" type="number" inputmode="decimal" min="0" step="any" value="${esc(blankIf0(l.qty))}"></div>
-      <div><small>₹ per ${esc(unit)}</small><input data-f="rate" type="number" inputmode="decimal" min="0" step="any" value="${esc(blankIf0(l.rate))}"></div>
-      <div class="lc" data-lc="${i}"></div>
+    <div class="r2" style="grid-template-columns:1fr 1fr;">
+      <div><small>Units ordered</small><input data-f="qty" type="number" inputmode="decimal" min="0" step="any" value="${esc(blankIf0(it.qty))}"></div>
+      <div><small>Sold as</small><input data-f="unitLabel" placeholder="e.g. 500 ml tub" value="${esc(it.unitLabel||'')}"></div>
     </div>
+    <div class="r2" style="grid-template-columns:1fr 1fr;">
+      <div><small>Your rate per unit (₹)</small><input data-f="offer" type="number" inputmode="decimal" min="0" step="any" value="${it.offer!=null && it.offer!=='' ? esc(it.offer) : ''}"></div>
+      <div class="q-info" data-info="${i}"></div>
+    </div>
+    <div class="q-isum" data-isum="${i}"></div>
   </div>`;
 }
 function qExtraHtml(e,i){
@@ -1653,15 +1838,19 @@ function qExtraHtml(e,i){
     </div>
   </div>`;
 }
-function renderQLines(){
-  $('#qLines').innerHTML = quote.lines.length
-    ? quote.lines.map(qLineHtml).join('')
-    : `<p class="q-hint" style="margin-top:0;">No ingredients yet. Tap “+ Add ingredient”${products.length?' or start from a product recipe above':''}.</p>`;
+function renderQItems(){
+  const box = $('#qItems');
+  if(products.length===0){
+    box.innerHTML = `<p class="q-hint" style="margin-top:0;">You have no flavours yet. Add your ingredients in <b>Stock</b>, then create each flavour in <b>Recipes</b>, and come back here.</p>
+      <button class="btn btn-sm btn-outline" data-act="goRecipes" type="button" style="margin-top:8px;">Go to Recipes</button>`;
+    return;
+  }
+  box.innerHTML = quote.items.length
+    ? quote.items.map(qItemHtml).join('')
+    : '<p class="q-hint" style="margin-top:0;">Add the flavours the restaurant wants.</p>';
 }
 function renderQExtras(){
-  $('#qExtras').innerHTML = quote.extras.length
-    ? quote.extras.map(qExtraHtml).join('')
-    : '';
+  $('#qExtras').innerHTML = quote.extras.map(qExtraHtml).join('');
 }
 
 function renderQuote(main){
@@ -1670,32 +1859,21 @@ function renderQuote(main){
   main.innerHTML = `
   <div id="quoteRoot" style="padding-bottom:70px;">
     <h2 class="section-title">Cost calculator</h2>
-    <p class="section-sub">Cost out a bulk order for a restaurant or café, try different quantities, and see what rate to quote. Nothing here changes your stock or sales.</p>
+    <p class="section-sub">Pick the flavours a restaurant or café wants, enter the units, and see what rate to quote for each. Costs come from your Stock and Recipes tabs. Nothing here changes your stock or sales.</p>
 
     <div class="card">
       <div class="q-sec">The order</div>
       <label>Quote name</label>
-      <input id="qName" value="${esc(q.name)}" placeholder="e.g. Vanilla tubs for Cafe Mocha">
+      <input id="qName" value="${esc(q.name)}" placeholder="e.g. Cafe Mocha monthly order">
       <label>Customer (shown on the PDF)</label>
       <input id="qCustomer" value="${esc(q.customer)}" placeholder="Restaurant or café name">
-      <div class="form-row">
-        <div><label>Sold as</label><input id="qUnit" value="${esc(q.unitLabel)}" placeholder="e.g. 500 ml tub"></div>
-        <div><label>Order qty (units)</label><input id="qQty" type="number" inputmode="decimal" min="0" step="any" value="${esc(blankIf0(q.qty))}"></div>
-      </div>
     </div>
 
     <div class="card">
-      <div class="q-sec">Ingredients for 1 unit</div>
-      ${products.length ? `<select id="qImport" style="margin-bottom:4px;">
-        <option value="">Start from a product recipe…</option>
-        ${products.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}
-      </select>` : ''}
-      <div id="qLines"></div>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-        <button class="btn btn-sm btn-ghost" data-act="addLine" type="button">+ Add ingredient</button>
-        <button class="btn btn-sm btn-outline" data-act="refreshRates" type="button">Refresh rates from stock</button>
-      </div>
-      <p class="q-hint">Ingredients picked from your stock list bring their cost with them, and you can change the rate for this quote only. Use “Other” for anything you don’t stock.</p>
+      <div class="q-sec">Flavours and units</div>
+      <div id="qItems"></div>
+      <button class="btn btn-sm btn-ghost" data-act="addItem" type="button" style="margin-top:10px;">+ Add flavour</button>
+      <p class="q-hint">The cost of each flavour is its recipe cost per unit (recipe cost for one batch, divided by what a batch makes). Type your own rate to see what you would earn, or leave it blank to use the suggested rate.</p>
     </div>
 
     <div class="card">
@@ -1705,7 +1883,7 @@ function renderQuote(main){
         ${EXTRA_PRESETS.map((p,i)=>`<button class="q-chip" data-act="addExtra" data-p="${i}" type="button">+ ${esc(p.label)}</button>`).join('')}
         <button class="q-chip" data-act="addExtra" data-p="-1" type="button">+ Other</button>
       </div>
-      <p class="q-hint">“Per unit” costs are charged on every unit (packaging, labour). “Once per order” costs are spread across the quantity (delivery, ice box), so bigger orders get cheaper per unit.</p>
+      <p class="q-hint">Labour, gas, electricity and packaging are already included from <b>Production costs</b> in the Recipes tab, so add only costs that belong to this order here. “Per unit” costs are charged on every unit. “Once per order” costs, like delivery, are shared across all the units, so bigger orders get cheaper per unit.</p>
     </div>
 
     <div class="card">
@@ -1718,7 +1896,7 @@ function renderQuote(main){
         <div><label>GST % (0 if none)</label><input id="qGst" type="number" inputmode="decimal" min="0" step="any" value="${esc(blankIf0(q.gst))}"></div>
         <div><label>Quote valid (days)</label><input id="qValid" type="number" inputmode="numeric" min="0" step="1" value="${esc(blankIf0(q.validity))}"></div>
       </div>
-      <p class="q-hint">Margin is the share of the selling price you keep as profit: 40% means ₹40 of every ₹100 billed is profit after all the costs above. Wastage is added to ingredient cost only. Check the right GST rate for ice cream with your accountant.</p>
+      <p class="q-hint">Margin is the share of the selling price you keep as profit: 40% means ₹40 of every ₹100 billed is profit after all costs. Wastage is added to ingredient cost only. Check the right GST rate for ice cream with your accountant.</p>
       <label>Notes on the PDF (optional)</label>
       <textarea id="qNotes" rows="2" placeholder="e.g. Delivery included within 5 km. Payment on delivery.">${esc(q.notes)}</textarea>
     </div>
@@ -1726,30 +1904,18 @@ function renderQuote(main){
     <div id="qSummary"></div>
 
     <div class="card">
-      <div class="q-sec">Rate you will quote</div>
-      <label style="margin-top:0;">Rate per unit (₹)</label>
-      <input id="qOffer" type="number" inputmode="decimal" min="0" step="any" value="${q.offer!=null?esc(q.offer):''}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;">
-        <p class="q-hint" style="margin:0;">Leave blank to use the suggested rate. Type your own to see what you would earn.</p>
-        <button class="btn btn-sm btn-ghost" data-act="resetOffer" type="button" style="flex:none;">Use suggested</button>
-      </div>
-      <div id="qOfferOut" style="margin-top:10px;"></div>
-    </div>
-
-    <div class="card">
-      <div class="q-sec">Compare quantities</div>
+      <div class="q-sec">What if the order were bigger or smaller?</div>
       <table class="qt">
-        <thead><tr><th>Qty</th><th>Cost/unit</th><th>Rate</th><th>Order</th><th>Profit</th></tr></thead>
+        <thead><tr><th>Size</th><th>Units</th><th>Cost/unit</th><th>Order</th><th>Profit</th></tr></thead>
         <tbody>
-          <tr class="hl" data-sr="main"><td data-c="qty"></td><td data-c="cpu"></td><td data-c="rate"></td><td data-c="val"></td><td data-c="profit"></td></tr>
-          ${[0,1,2,3].map(i=>`<tr data-sr="${i}"><td><input data-sc="${i}" type="number" inputmode="numeric" min="1" step="1" value="${esc(q.scenarios[i])}"></td><td data-c="cpu"></td><td data-c="rate"></td><td data-c="val"></td><td data-c="profit"></td></tr>`).join('')}
+          ${[0,1,2,3].map(i=>`<tr data-sr="${i}"><td><input data-st="${i}" type="number" inputmode="decimal" min="0" step="any" value="${esc(q.steps[i])}"></td><td data-c="units"></td><td data-c="cpu"></td><td data-c="val"></td><td data-c="profit"></td></tr>`).join('')}
         </tbody>
       </table>
-      <p class="q-hint">The green row is this order. Rate is the suggested rate at your target margin, rounded up to the next 50 paise. Change the four quantities to whatever you want to compare.</p>
+      <p class="q-hint">Size is a multiplier on every flavour: 2 means double the units of each flavour. Order value uses the suggested rates at your target margin, so you can see how a bigger order brings the cost per unit down. The green row is the order as it is now.</p>
     </div>
 
     <div class="card">
-      <div class="q-sec">Rate at different margins</div>
+      <div class="q-sec">Rates at different margins</div>
       <div id="qLadder"></div>
     </div>
 
@@ -1765,14 +1931,14 @@ function renderQuote(main){
         <button class="btn btn-ghost btn-block" data-act="newQuote" type="button">New Quote</button>
       </div>
       ${q.id ? '<button class="btn btn-ghost btn-block" data-act="saveCopy" type="button" style="margin-top:8px;">Save as a new copy</button>' : ''}
-      <p class="q-hint">The PDF shows only the rate, quantity and total. Your costs and margin are never included.</p>
+      <p class="q-hint">The PDF shows only the flavours, units, rates and total. Your costs and margin are never included. Saving locks in the rate you are quoting for each flavour.</p>
     </div>
 
     <h2 class="section-title" style="margin-top:20px;">Saved quotes</h2>
     <div id="qSaved" style="margin-top:10px;"></div>
   </div>`;
 
-  renderQLines();
+  renderQItems();
   renderQExtras();
   renderSavedQuotes();
   refreshQuote();
@@ -1785,52 +1951,33 @@ function renderQuote(main){
     const line = t.closest('.qline');
     if(t.id==='qName') q.name = t.value;
     else if(t.id==='qCustomer') q.customer = t.value;
-    else if(t.id==='qUnit') q.unitLabel = t.value;
-    else if(t.id==='qQty') q.qty = t.value;
     else if(t.id==='qMargin') q.margin = t.value;
     else if(t.id==='qWaste') q.wastage = t.value;
     else if(t.id==='qGst') q.gst = t.value;
     else if(t.id==='qValid') q.validity = t.value;
     else if(t.id==='qNotes') q.notes = t.value;
-    else if(t.id==='qOffer') q.offer = t.value==='' ? null : num(t.value);
-    else if(t.dataset.sc!==undefined) q.scenarios[+t.dataset.sc] = t.value;
-    else if(line && t.dataset.f && line.dataset.i!==undefined) q.lines[+line.dataset.i][t.dataset.f] = t.value;
+    else if(t.dataset.st!==undefined) q.steps[+t.dataset.st] = t.value;
+    else if(line && t.dataset.f && line.dataset.i!==undefined){
+      const it = q.items[+line.dataset.i];
+      if(t.dataset.f==='offer') it.offer = t.value==='' ? null : num(t.value);
+      else it[t.dataset.f] = t.value;
+    }
     else if(line && t.dataset.xf && line.dataset.x!==undefined) q.extras[+line.dataset.x][t.dataset.xf] = t.value;
     refreshQuote();
   });
 
   root.addEventListener('change', e=>{
     const t = e.target;
-    if(t.id==='qImport'){
-      const p = products.find(x=>x.id===t.value);
-      t.value = '';
-      if(!p) return;
-      if(!(p.recipe||[]).length){ toast('That product has no recipe yet'); return; }
-      if(q.lines.length && !confirm(`Replace the ingredient lines with the recipe of ${p.name}?`)) return;
-      q.lines = (p.recipe||[]).map(r=>{
-        const g = ingredients.find(i=>i.id===r.ingredientId);
-        return g ? {ingredientId:g.id, name:g.name, unit:g.unit, qty:r.qty, rate:g.rate||0} : null;
-      }).filter(Boolean);
-      if(!q.name.trim()){ q.name = p.name; $('#qName').value = p.name; }
-      renderQLines(); refreshQuote();
-      return;
-    }
     const line = t.closest('.qline');
     if(!line) return;
-    if(line.dataset.i!==undefined){
-      const l = q.lines[+line.dataset.i];
-      if(t.dataset.f==='src'){
-        if(t.value==='__custom'){
-          l.ingredientId = null;
-        } else {
-          const g = ingredients.find(i=>i.id===t.value);
-          if(g){ l.ingredientId = g.id; l.name = g.name; l.unit = g.unit; l.rate = g.rate||0; }
-        }
-        renderQLines(); refreshQuote();
-      } else if(t.dataset.f==='unit'){
-        l.unit = t.value;
-        renderQLines(); refreshQuote();
-      }
+    if(line.dataset.i!==undefined && t.dataset.f==='prod'){
+      const it = q.items[+line.dataset.i];
+      const p = products.find(x=>x.id===t.value);
+      it.productId = p ? p.id : null;
+      it.name = p ? p.name : '';
+      it.offer = null;
+      if(p && !String(it.unitLabel||'').trim()) it.unitLabel = p.unitLabel || '';
+      renderQItems(); refreshQuote();
     } else if(line.dataset.x!==undefined && t.dataset.xf==='type'){
       q.extras[+line.dataset.x].type = t.value;
       refreshQuote();
@@ -1841,29 +1988,22 @@ function renderQuote(main){
     const btn = e.target.closest('[data-act]');
     if(!btn) return;
     const act = btn.dataset.act;
-    if(act==='rmLine'){
-      q.lines.splice(+btn.closest('.qline').dataset.i, 1);
-      renderQLines(); refreshQuote();
+    if(act==='addItem'){
+      if(products.length===0){ toast('Create a flavour in Recipes first'); return; }
+      q.items.push({productId:null, name:'', unitLabel:'', qty:'', offer:null});
+      renderQItems(); refreshQuote();
+    } else if(act==='rmItem'){
+      q.items.splice(+btn.closest('.qline').dataset.i, 1);
+      renderQItems(); refreshQuote();
     } else if(act==='rmExtra'){
       q.extras.splice(+btn.closest('.qline').dataset.x, 1);
       renderQExtras(); refreshQuote();
-    } else if(act==='addLine'){
-      q.lines.push({ingredientId:null, name:'', unit:'g', qty:'', rate:''});
-      renderQLines(); refreshQuote();
     } else if(act==='addExtra'){
       const p = EXTRA_PRESETS[+btn.dataset.p] || {label:'', type:'unit'};
       q.extras.push({label:p.label, amount:'', type:p.type});
       renderQExtras(); refreshQuote();
-    } else if(act==='refreshRates'){
-      let n = 0;
-      q.lines.forEach(l=>{
-        const g = l.ingredientId && ingredients.find(i=>i.id===l.ingredientId);
-        if(g){ l.rate = g.rate||0; l.unit = g.unit; n++; }
-      });
-      renderQLines(); refreshQuote();
-      toast(n ? `Updated ${n} rate${n!==1?'s':''} from stock` : 'No stock-linked ingredients to refresh');
-    } else if(act==='resetOffer'){
-      q.offer = null; $('#qOffer').value = ''; refreshQuote();
+    } else if(act==='goRecipes'){
+      document.querySelector('nav.tabbar button[data-tab=recipes]').click();
     } else if(act==='shareQuote'){
       shareQuotePdf();
     } else if(act==='saveQuote'){
@@ -1871,7 +2011,7 @@ function renderQuote(main){
     } else if(act==='saveCopy'){
       saveCurrentQuote(true);
     } else if(act==='newQuote'){
-      const hasWork = q.lines.length || q.name.trim() || q.customer.trim();
+      const hasWork = q.items.length || q.name.trim() || q.customer.trim();
       if(hasWork && !confirm('Start a new quote? Anything not saved in the current one will be cleared.')) return;
       quote = blankQuote();
       persistDraft();
@@ -1899,102 +2039,131 @@ function renderQuote(main){
 
 function refreshQuote(){
   const q = quote;
-  const c = calcQuote(q, q.qty);
-  const auto = autoRate(c.suggested);
-  const rate = offerRate(q, c);
-  const ev = evalOffer(q, c, rate);
-  const qtyTxt = round2(c.qty);
+  const c = calcOrder(q, 1);
+  const ev = evalOrder(q, c);
+  const gst = num(q.gst);
+  const unitsTxt = round2(c.totalUnits);
 
-  // per-line cost (for 1 unit)
-  $$('#qLines [data-lc]').forEach(el=>{
-    const l = q.lines[+el.dataset.lc];
-    if(l) el.textContent = rate2(num(l.qty)*num(l.rate));
+  // per-flavour info lines
+  c.rows.forEach((r,i)=>{
+    const info = document.querySelector(`#qItems [data-info="${i}"]`);
+    const sum = document.querySelector(`#qItems [data-isum="${i}"]`);
+    const offerInput = document.querySelector(`#qItems .qline[data-i="${i}"] [data-f=offer]`);
+    if(offerInput) offerInput.placeholder = 'auto ' + rate2(r.auto);
+    if(info) info.innerHTML = r.p
+      ? `Cost ${rate2(r.cost)}<br>Suggested ${rate2(r.suggested)}`
+      : 'Choose a flavour';
+    if(sum){
+      const rate = rateOf(r);
+      const amt = r.qty*rate;
+      const prof = amt - r.cost*r.qty;
+      sum.innerHTML = r.p && r.qty>0
+        ? `<span>${round2(r.qty)} × ${rate2(rate)} = <b>${rupee0(amt)}</b></span><span class="${prof>=0?'q-pos':'q-neg'}">profit ${rupee0(prof)}</span>`
+        : '';
+    }
   });
 
   // warnings
-  const missing = q.lines.filter(l=>num(l.qty)<=0 || num(l.rate)<=0).length;
-  let warnHtml = '';
-  if(q.lines.length===0) warnHtml = 'Add at least one ingredient to get a cost.';
-  else if(missing>0) warnHtml = `${missing} ingredient${missing!==1?'s have':' has'} no quantity or no cost, so the rate below will be too low.`;
-  else if(c.qty<=0) warnHtml = 'Enter an order quantity.';
+  const warns = [];
+  if(q.items.length===0) warns.push('Add a flavour to get a cost.');
+  else {
+    if(q.items.some(it=>!it.productId)) warns.push('Choose a flavour for every line.');
+    if(q.items.some(it=>num(it.qty)<=0)) warns.push('Enter the units ordered for each flavour.');
+    const noCost = c.rows.filter(r=>r.p && r.batchCost<=0).map(r=>r.p.name);
+    if(noCost.length) warns.push(`${noCost.map(esc).join(', ')} ${noCost.length>1?'have':'has'} no ingredient cost. Add the recipe in Recipes and the cost of each ingredient in Stock, or the rate will be too low.`);
+  }
 
   // summary
+  const ingTotal = c.rows.reduce((s,r)=>s + r.ingPerUnit*r.qty, 0);
+  const wasteTotal = c.rows.reduce((s,r)=>s + r.waste*r.qty, 0);
+  const ovTotal = c.rows.reduce((s,r)=>s + r.ovPerUnit*r.qty, 0);
+  const rateRows = c.rows.filter(r=>r.p).map(r=>`<tr><td style="font-family:'Space Grotesk',sans-serif;">${esc(r.p.name)}</td><td>${round2(r.qty)}</td><td>${rate2(r.cost)}</td><td>${rate2(rateOf(r))}</td><td>${rupee0(r.qty*rateOf(r))}</td></tr>`).join('');
+  let pill = '';
+  if(c.totalUnits>0){
+    if(ev.profit < 0) pill = `<span class="stock-pill stock-out">Below cost: you lose ${rupee0(-ev.profit)}</span>`;
+    else if(ev.marginPct < c.m*100 - 0.05) pill = `<span class="stock-pill stock-low">Below your ${round2(c.m*100)}% target</span>`;
+    else pill = '<span class="stock-pill stock-ok">Meets your target</span>';
+  }
   $('#qSummary').innerHTML = `
-    ${warnHtml ? `<div class="q-warn">${warnHtml}</div>` : ''}
+    ${warns.length ? `<div class="q-warn">${warns.join('<br>')}</div>` : ''}
     <div class="card q-top">
-      <div class="q-lbl">Suggested rate · ${qtyTxt} units at ${round2(c.m*100)}% margin</div>
-      <div class="q-big">${rate2(c.suggested)} <small>per unit</small></div>
-      <div class="q-sub">Rounded up: ${rate2(auto)}<br>Break-even (no profit): ${rate2(c.costPerUnit)}</div>
+      <div class="q-lbl">Order value · ${unitsTxt} units${gst>0?' · before GST':''}</div>
+      <div class="q-big">${rupee0(ev.rev)}</div>
+      <div class="q-sub">Your profit ${rupee0(ev.profit)} (${round2(ev.marginPct)}% margin)<br>Total cost ${rupee0(c.totalCost)}</div>
     </div>
     <div class="card">
-      <div class="q-sec">Cost of 1 unit</div>
-      <div class="q-row"><span>Ingredients</span><span>${rate2(c.ing)}</span></div>
-      <div class="q-row"><span>Wastage (${round2(num(q.wastage))}%)</span><span>${rate2(c.waste)}</span></div>
-      <div class="q-row"><span>Per-unit extras</span><span>${rate2(c.perUnitExtra)}</span></div>
-      <div class="q-row"><span>Per-order extras ÷ ${qtyTxt}</span><span>${rate2(c.qty>0 ? c.perOrderExtra/c.qty : 0)}</span></div>
-      <div class="q-row b"><span>Cost per unit</span><span>${rate2(c.costPerUnit)}</span></div>
-      <div class="q-row" style="border-bottom:none;margin-top:6px;"><span>Total cost for ${qtyTxt} units</span><span>${rate2(c.totalCost)}</span></div>
+      <div class="q-sec">Rate for each flavour</div>
+      ${rateRows ? `<table class="qt"><thead><tr><th>Flavour</th><th>Units</th><th>Cost</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${rateRows}</tbody></table>` : '<p class="q-hint" style="margin-top:0;">Nothing to show yet.</p>'}
+      ${pill ? `<div style="margin-top:10px;">${pill}</div>` : ''}
+      ${gst>0 ? `<div class="q-row" style="margin-top:10px;"><span>GST ${round2(gst)}%</span><span>${rupee0(ev.gstAmt)}</span></div>
+      <div class="q-row b"><span>Customer pays</span><span>${rupee0(ev.grand)}</span></div>` : ''}
+      <p class="q-hint">Cost per unit includes ingredients, wastage, per-unit costs and a share of the per-order costs.</p>
+    </div>
+    <div class="card">
+      <div class="q-sec">Where the cost comes from</div>
+      <div class="q-row"><span>Ingredients</span><span>${rupee0(ingTotal)}</span></div>
+      <div class="q-row"><span>Wastage (${round2(num(q.wastage))}%)</span><span>${rupee0(wasteTotal)}</span></div>
+      <div class="q-row"><span>Production costs (labour, gas…)</span><span>${rupee0(ovTotal)}</span></div>
+      <div class="q-row"><span>Per-unit extras × ${unitsTxt}</span><span>${rupee0(c.perUnitExtra*c.totalUnits)}</span></div>
+      <div class="q-row"><span>Per-order extras</span><span>${rupee0(c.totalUnits>0?c.perOrderExtra:0)}</span></div>
+      <div class="q-row b"><span>Total cost</span><span>${rupee0(c.totalCost)}</span></div>
     </div>`;
 
-  // offer result
-  const pos = ev.profit >= 0;
-  let pill = '';
-  if(rate<=0) pill = '<span class="stock-pill stock-low">Enter a rate</span>';
-  else if(ev.profit < 0) pill = `<span class="stock-pill stock-out">Below cost: you lose ${rupee0(-ev.profit)}</span>`;
-  else if(ev.marginPct < c.m*100 - 0.05) pill = `<span class="stock-pill stock-low">Below your ${round2(c.m*100)}% target</span>`;
-  else pill = '<span class="stock-pill stock-ok">Meets your target</span>';
-  $('#qOfferOut').innerHTML = `
-    <div class="q-row"><span>Rate per unit${q.offer==null?' (suggested)':''}</span><span>${rate2(rate)}</span></div>
-    <div class="q-row"><span>Order value${num(q.gst)>0?' (before GST)':''}</span><span>${rupee0(ev.rev)}</span></div>
-    ${num(q.gst)>0 ? `<div class="q-row"><span>GST ${round2(num(q.gst))}%</span><span>${rupee0(ev.gstAmt)}</span></div>
-    <div class="q-row"><span>Customer pays</span><span>${rupee0(ev.grand)}</span></div>` : ''}
-    <div class="q-row"><span>Your profit</span><span class="${pos?'q-pos':'q-neg'}">${rupee0(ev.profit)} (${round2(ev.marginPct)}%)</span></div>
-    <div style="margin-top:10px;">${pill}</div>`;
-
-  // scenarios
+  // order size comparison
   $$('#quoteRoot tr[data-sr]').forEach(tr=>{
-    const key = tr.dataset.sr;
-    const qty = key==='main' ? q.qty : q.scenarios[+key];
-    const sc = calcQuote(q, qty);
-    const r = autoRate(sc.suggested);
-    const val = r*sc.qty;
-    const set = (k, txt)=>{ const td = tr.querySelector(`[data-c=${k}]`); if(td) td.textContent = txt; };
-    if(key==='main') set('qty', String(round2(sc.qty)));
-    if(sc.qty>0){
-      set('cpu', rate2(sc.costPerUnit)); set('rate', rate2(r));
-      set('val', rupee0(val)); set('profit', rupee0(val - sc.totalCost));
-    } else { ['cpu','rate','val','profit'].forEach(k=>set(k,'-')); }
+    const k = num(q.steps[+tr.dataset.sr]);
+    const sc = calcOrder(q, k);
+    const set = (key, txt)=>{ const td = tr.querySelector(`[data-c=${key}]`); if(td) td.textContent = txt; };
+    tr.classList.toggle('hl', Math.abs(k-1) < 1e-9);
+    if(sc.totalUnits>0){
+      const val = sc.rows.reduce((s,r)=>s + r.qty*r.auto, 0);
+      set('units', String(round2(sc.totalUnits)));
+      set('cpu', rate2(sc.totalCost/sc.totalUnits));
+      set('val', rupee0(val));
+      set('profit', rupee0(val - sc.totalCost));
+    } else ['units','cpu','val','profit'].forEach(key=>set(key,'-'));
   });
 
-  // margin ladder
-  $('#qLadder').innerHTML = c.qty>0 ? `
-    <table class="qt"><thead><tr><th>Margin</th><th>Rate/unit</th><th>Order</th><th>Profit</th></tr></thead><tbody>
+  // margin ladder (one column per flavour)
+  const live = c.rows.filter(r=>r.p && r.qty>0);
+  $('#qLadder').innerHTML = live.length ? `
+    <div style="overflow-x:auto;"><table class="qt"><thead><tr><th>Margin</th>${live.map(r=>`<th>${esc(r.p.name.length>9 ? r.p.name.slice(0,8)+'…' : r.p.name)}</th>`).join('')}<th>Profit</th></tr></thead><tbody>
     ${MARGIN_LADDER.map(m=>{
-      const r = autoRate(c.costPerUnit/(1-m/100));
-      const val = r*c.qty;
+      const rates = live.map(r=>autoRate(r.cost/(1-m/100)));
+      const val = live.reduce((s,r,i)=>s + r.qty*rates[i], 0);
       const hl = Math.abs(m - c.m*100) < 0.5;
-      return `<tr class="${hl?'hl':''}"><td>${m}%</td><td>${rate2(r)}</td><td>${rupee0(val)}</td><td>${rupee0(val-c.totalCost)}</td></tr>`;
+      return `<tr class="${hl?'hl':''}"><td>${m}%</td>${rates.map(x=>`<td>${rate2(x)}</td>`).join('')}<td>${rupee0(val - c.totalCost)}</td></tr>`;
     }).join('')}
-    </tbody></table>
-    <p class="q-hint">Rates are rounded up to the next 50 paise, so the profit can be a little above the margin shown.</p>` :
-    '<p class="q-hint" style="margin-top:0;">Enter an order quantity to see this.</p>';
+    </tbody></table></div>
+    <p class="q-hint">Rate per unit for each flavour, rounded up to the next 50 paise, and the profit on the whole order.</p>` :
+    '<p class="q-hint" style="margin-top:0;">Add a flavour and its units to see this.</p>';
 
-  // stock check
-  const linked = q.lines.map(l=>({l, g: l.ingredientId && ingredients.find(i=>i.id===l.ingredientId)})).filter(x=>x.g);
-  $('#qStockCard').style.display = linked.length ? '' : 'none';
-  if(linked.length){
-    const factor = c.qty * (1 + num(q.wastage)/100);
-    const rows = linked.map(({l,g})=>{
-      const need = num(l.qty)*factor;
-      const ok = g.stock >= need - 1e-9;
-      return `<div class="q-row" style="color:${ok?'var(--good)':'var(--red-deep)'}"><span>${esc(g.name)}</span><span>need ${round2(need)} ${esc(g.unit)} · have ${round2(g.stock)}${ok?'':` (short ${round2(need-g.stock)})`}</span></div>`;
-    }).join('');
-    $('#qStock').innerHTML = rows + '<p class="q-hint">Checked against the stock you have now, including wastage. Ingredients typed as “Other” are not checked.</p>';
+  // stock check, all flavours together
+  const need = {};
+  const batchLines = [];
+  c.rows.forEach(r=>{
+    if(!r.p || r.qty<=0) return;
+    const batches = r.qty / r.yieldN;
+    batchLines.push(`<div class="q-row"><span>${esc(r.p.name)}</span><span>${round2(r.qty)} units = ${round2(batches)} batches (${Math.ceil(batches-1e-9)} in practice)</span></div>`);
+    (r.p.recipe||[]).forEach(rc=>{
+      const g = ingredients.find(i=>i.id===rc.ingredientId);
+      if(!g) return;
+      need[g.id] = need[g.id] || {g, qty:0};
+      need[g.id].qty += num(rc.qty)*batches*(1+c.w);
+    });
+  });
+  const needList = Object.values(need);
+  $('#qStockCard').style.display = needList.length ? '' : 'none';
+  if(needList.length){
+    $('#qStock').innerHTML = batchLines.join('') + needList.map(({g,qty})=>{
+      const ok = g.stock >= qty - 1e-9;
+      return `<div class="q-row" style="color:${ok?'var(--good)':'var(--red-deep)'}"><span>${esc(g.name)}</span><span>need ${round2(qty)} ${esc(g.unit)} · have ${round2(g.stock)}${ok?'':` (short ${round2(qty-g.stock)})`}</span></div>`;
+    }).join('') + '<p class="q-hint">Checked against the stock you have now, including wastage, across all flavours together. You cannot make part of a batch, so plan for the batches in practice.</p>';
   }
 
   // sticky bar
-  $('#qbCnt').textContent = `Suggested rate · ${qtyTxt} units`;
-  $('#qbAmt').textContent = rate2(rate) + ' / unit';
+  $('#qbCnt').textContent = `Order value · ${unitsTxt} units`;
+  $('#qbAmt').textContent = `${rupee0(ev.rev)} · profit ${rupee0(ev.profit)}`;
 
   persistDraft();
 }
@@ -2003,9 +2172,17 @@ function refreshQuote(){
 async function saveCurrentQuote(asCopy){
   const q = quote;
   if(!q.name.trim() && !q.customer.trim()){ toast('Give the quote a name or customer first'); return; }
-  if(!q.name.trim()){ q.name = q.customer.trim(); const el = $('#qName'); if(el) el.value = q.name; }
+  if(q.items.length===0){ toast('Add at least one flavour first'); return; }
+  if(!q.name.trim()){ q.name = q.customer.trim(); }
+  // Lock in the rate being quoted for each flavour, so reopening the quote later
+  // shows what you actually offered even if ingredient prices have changed since.
+  const c0 = calcOrder(q, 1);
+  q.items.forEach((it,i)=>{ if(it.offer==null || it.offer==='') it.offer = c0.rows[i].auto; });
+  const c = calcOrder(q, 1);
+  const ev = evalOrder(q, c);
   const snap = JSON.parse(JSON.stringify(q));
   snap.savedAt = Date.now();
+  snap.totals = {units: c.totalUnits, value: ev.rev, profit: ev.profit};
   const existingIdx = (!asCopy && q.id) ? savedQuotes.findIndex(x=>x.id===q.id) : -1;
   if(existingIdx>=0){
     savedQuotes[existingIdx] = snap;
@@ -2028,13 +2205,13 @@ function renderSavedQuotes(){
     return;
   }
   box.innerHTML = savedQuotes.map(sq=>{
-    const c = calcQuote(sq, sq.qty);
-    const r = offerRate(sq, c);
-    const ev = evalOffer(sq, c, r);
+    const t = sq.totals || {units:0, value:0, profit:0};
+    const flavours = (sq.items||[]).map(it=>`${it.name||'?'} ×${round2(num(it.qty))}`).join(', ');
     return `<div class="card">
       <div class="item-name">${esc(sq.name||sq.customer||'Quote')}</div>
       <div class="item-meta">${sq.customer ? esc(sq.customer)+' · ' : ''}${new Date(sq.savedAt||Date.now()).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</div>
-      <div class="item-meta" style="margin-top:4px;">${round2(c.qty)} × ${rate2(r)} = ${rupee0(ev.rev)} · profit ${rupee0(ev.profit)}</div>
+      <div class="item-meta" style="margin-top:4px;">${esc(flavours)}</div>
+      <div class="item-meta" style="margin-top:4px;">${round2(t.units)} units · ${rupee0(t.value)} · profit ${rupee0(t.profit)}</div>
       <div style="display:flex;gap:8px;margin-top:10px;">
         <button class="btn btn-sm btn-primary" data-act="openQuote" data-id="${sq.id}" type="button">Open</button>
         <button class="btn btn-sm btn-outline" data-act="delQuote" data-id="${sq.id}" type="button">Delete</button>
@@ -2043,20 +2220,19 @@ function renderSavedQuotes(){
   }).join('');
 }
 
-// ---------- Customer PDF (rate, quantity and total only; no costs) ----------
+// ---------- Customer PDF (flavours, units, rates and total only; no costs) ----------
 async function shareQuotePdf(){
   const q = quote;
-  const c = calcQuote(q, q.qty);
-  const rate = offerRate(q, c);
-  if(c.qty<=0){ toast('Enter an order quantity'); return; }
-  if(rate<=0){ toast('Enter a rate to quote'); return; }
+  const c = calcOrder(q, 1);
+  const lines = c.rows.filter(r=>r.p && r.qty>0 && rateOf(r)>0);
+  if(lines.length===0){ toast('Add a flavour with units and a rate first'); return; }
   if(typeof window.jspdf==='undefined'){ toast('PDF library still loading — try again in a moment'); return; }
   const btn = $('#qShareBtn');
   const original = btn.textContent;
   btn.textContent = 'Preparing quote…';
   btn.disabled = true;
   try{
-    const blob = buildQuotePdfBlob(q, c, rate);
+    const blob = buildQuotePdfBlob(q, c, lines);
     const safe = (q.customer||q.name||'Quote').replace(/[^a-z0-9]+/gi,'-').replace(/^-+|-+$/g,'') || 'Quote';
     const fileName = `Aurum-Frost-Quote-${safe}.pdf`;
     const file = new File([blob], fileName, {type:'application/pdf'});
@@ -2078,13 +2254,16 @@ async function shareQuotePdf(){
   }
 }
 
-function buildQuotePdfBlob(q, c, rate){
+function buildQuotePdfBlob(q, c, lines){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 48;
   const red = [122,35,35], ink = [42,23,20], muted = [130,90,80];
-  const ev = evalOffer(q, c, rate);
+  const rev = lines.reduce((s,r)=>s + r.qty*rateOf(r), 0);
+  const gst = num(q.gst);
+  const gstAmt = rev*gst/100;
+  const grand = rev + gstAmt;
   const now = new Date();
   const fmtD = d => d.toLocaleDateString('en-IN',{day:'2-digit', month:'short', year:'numeric'});
   const validDays = Math.max(0, Math.round(num(q.validity)));
@@ -2115,10 +2294,9 @@ function buildQuotePdfBlob(q, c, rate){
     y += 30;
   }
 
-  // table header
   const xQty = pageW-margin-200, xRate = pageW-margin-100, xAmt = pageW-margin;
   doc.setFont('courier','normal'); doc.setFontSize(8); doc.setTextColor(...muted);
-  doc.text('ITEM', margin, y);
+  doc.text('FLAVOUR', margin, y);
   doc.text('QTY', xQty, y, {align:'right'});
   doc.text('RATE / UNIT', xRate, y, {align:'right'});
   doc.text('AMOUNT', xAmt, y, {align:'right'});
@@ -2127,32 +2305,35 @@ function buildQuotePdfBlob(q, c, rate){
   doc.line(margin, y, pageW-margin, y);
   y += 20;
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(...ink);
-  const itemName = (q.name||'Ice cream').trim();
-  const nameLines = doc.splitTextToSize(itemName, xQty - margin - 40);
-  doc.text(nameLines, margin, y);
-  doc.text(String(round2(c.qty)), xQty, y, {align:'right'});
-  doc.text(rate2Pdf(rate), xRate, y, {align:'right'});
-  doc.text(rate2Pdf(ev.rev), xAmt, y, {align:'right'});
-  y += nameLines.length*14;
-  if(q.unitLabel.trim()){
-    doc.setFontSize(9); doc.setTextColor(...muted);
-    doc.text(q.unitLabel.trim(), margin, y);
-    y += 14;
-  }
-  y += 8;
-  doc.setDrawColor(230,210,180);
-  doc.line(margin, y, pageW-margin, y);
-  y += 22;
+  lines.forEach(r=>{
+    if(y > 700){ doc.addPage(); y = 60; }
+    const rate = rateOf(r);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(...ink);
+    const nameLines = doc.splitTextToSize(r.p.name, xQty - margin - 40);
+    doc.text(nameLines, margin, y);
+    doc.text(String(round2(r.qty)), xQty, y, {align:'right'});
+    doc.text(rate2Pdf(rate), xRate, y, {align:'right'});
+    doc.text(rate2Pdf(r.qty*rate), xAmt, y, {align:'right'});
+    y += nameLines.length*14;
+    if(String(r.it.unitLabel||'').trim()){
+      doc.setFontSize(9); doc.setTextColor(...muted);
+      doc.text(String(r.it.unitLabel).trim(), margin, y);
+      y += 14;
+    }
+    y += 6;
+    doc.setDrawColor(240,226,200);
+    doc.line(margin, y, pageW-margin, y);
+    y += 18;
+  });
 
-  const gst = num(q.gst);
+  y += 4;
   if(gst>0){
     doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(...ink);
     doc.text('Subtotal', xRate-40, y, {align:'right'});
-    doc.text(rate2Pdf(ev.rev), xAmt, y, {align:'right'});
+    doc.text(rate2Pdf(rev), xAmt, y, {align:'right'});
     y += 18;
     doc.text(`GST (${round2(gst)}%)`, xRate-40, y, {align:'right'});
-    doc.text(rate2Pdf(ev.gstAmt), xAmt, y, {align:'right'});
+    doc.text(rate2Pdf(gstAmt), xAmt, y, {align:'right'});
     y += 10;
     doc.setDrawColor(...red);
     doc.line(xRate-120, y, pageW-margin, y);
@@ -2164,10 +2345,11 @@ function buildQuotePdfBlob(q, c, rate){
   }
   doc.setFont('times','bold'); doc.setFontSize(14); doc.setTextColor(...red);
   doc.text('Total', xRate-40, y, {align:'right'});
-  doc.text(rate2Pdf(ev.grand), xAmt, y, {align:'right'});
+  doc.text(rate2Pdf(grand), xAmt, y, {align:'right'});
   y += 40;
 
   if(q.notes.trim()){
+    if(y > 700){ doc.addPage(); y = 60; }
     doc.setFont('courier','normal'); doc.setFontSize(8); doc.setTextColor(...muted);
     doc.text('NOTES', margin, y);
     y += 14;
@@ -2178,14 +2360,19 @@ function buildQuotePdfBlob(q, c, rate){
   }
 
   if(validDays>0){
+    if(y > 740){ doc.addPage(); y = 60; }
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...ink);
     doc.text(`These rates are valid until ${fmtD(validTill)}.`, margin, y);
   }
 
-  doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(...red);
-  doc.text('Handmade in small batches · Completely vegetarian', margin, 782);
-  doc.setFont('courier','normal'); doc.setFontSize(8); doc.setTextColor(...muted);
-  doc.text('Aurum & Frost — Artisanal Ice Creams', margin, 800);
+  const last = doc.getNumberOfPages();
+  for(let pg=1; pg<=last; pg++){
+    doc.setPage(pg);
+    doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(...red);
+    doc.text('Handmade in small batches · Completely vegetarian', margin, 782);
+    doc.setFont('courier','normal'); doc.setFontSize(8); doc.setTextColor(...muted);
+    doc.text('Aurum & Frost — Artisanal Ice Creams', margin, 800);
+  }
 
   return doc.output('blob');
 }
@@ -2202,12 +2389,10 @@ $('#sheetBackdrop').addEventListener('click', e=>{
   if(e.target===$('#sheetBackdrop')) closeSheet();
 });
 
+// Cost of ONE unit: the recipe is for a whole batch, so divide by what a batch makes,
+// then add the production costs (labour, gas, electricity, packaging).
 function computeProductCost(product){
-  return (product.recipe||[]).reduce((sum,r)=>{
-    const ing = ingredients.find(i=>i.id===r.ingredientId);
-    if(!ing) return sum;
-    return sum + (ing.rate||0)*r.qty;
-  }, 0);
+  return productBatchCost(product) / prodYield(product) + productOverheadPerUnit(product);
 }
 
 function esc(s){
