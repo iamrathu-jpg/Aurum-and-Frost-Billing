@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aurum-frost-billing-v1';
+const CACHE_NAME = 'aurum-frost-billing-v2';
 const FILES_TO_CACHE = [
   './aurum-frost-billing_1.html',
   './manifest.json',
@@ -24,15 +24,33 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).then((response) => {
-        if (response.ok && event.request.method === 'GET') {
+  if (event.request.method !== 'GET') return;
+  const sameOrigin = new URL(event.request.url).origin === self.location.origin;
+
+  if (sameOrigin) {
+    // Our own files: try the network first so app updates show up,
+    // and fall back to the saved copy when offline.
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => cached);
-    })
-  );
+      }).catch(() => caches.match(event.request))
+    );
+  } else {
+    // Outside files (the PDF library): saved copy first, so it works offline.
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        return cached || fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      })
+    );
+  }
 });
